@@ -1,0 +1,46 @@
+# 依赖与构建产物
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+.next/
+**/.next/
+out/
+**/out/
+*.tsbuildinfo
+
+# Python
+__pycache__/
+**/__pycache__/
+*.pyc
+
+# 环境变量与本地配置（含密钥，禁止提交）
+.env
+.env.*
+*.local
+
+# 测试与覆盖率
+coverage/
+**/coverage/
+tests/**/logs/
+tests/**/results/
+tests/**/sandboxes/
+
+# 数据与运行时产物（会话数据不出本地）
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+captures/
+*.tgz
+
+# IDE 与系统文件
+.idea/
+.vscode/
+.DS_Store
+*.swp
+*.swo
+
+# opencode / agent 本地配置
+.opencode/
+.claude/
