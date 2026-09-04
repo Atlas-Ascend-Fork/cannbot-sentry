@@ -1,10 +1,10 @@
-# CANNBot-Relay
+# CANNBot-Sentry
 
 ![License](https://img.shields.io/badge/License-CANN%20OSL%20v2.0-blue?style=flat-square)
 
 **[中文文档](README-zh.md)**
 
-CANNBot-Relay is the relay station of **Observation · Audit · Evaluation** for LLM coding agents (opencode / Claude Code). While agents run on the field, Relay stands on the sideline: **recording what happened, replaying the facts, and judging the quality**.
+CANNBot-Sentry is the sentry post of **Observation · Audit · Evaluation** for LLM coding agents (opencode / Claude Code). While agents run on the field, Sentry stands on the sideline: **recording what happened, replaying the facts, and judging the quality**.
 
 > Status: this repository is newly created. Packages are being migrated from [cannbot-skills](https://gitcode.com/cann/cannbot-skills) (`plugins-community/cannbot-insight`) into `packages/insight` and `packages/cpx`. See [Directory Structure](#directory-structure).
 
@@ -22,8 +22,8 @@ CANNBot-Relay is the relay station of **Observation · Audit · Evaluation** for
 ## Source Download
 
 ```bash
-git clone https://gitcode.com/cann/cannbot-relay.git
-cd cannbot-relay
+git clone https://gitcode.com/cann/cannbot-sentry.git
+cd cannbot-sentry
 ```
 
 ## Installation
@@ -43,7 +43,7 @@ The unified installer supports installing a **single package**, a **combination*
 Monorepo, one directory under `packages/` = one independently installable package. Packages share zero imports and zero build-time dependencies; they couple only through runtime contracts (data formats, CLI interfaces).
 
 ```
-cannbot-relay/
+cannbot-sentry/
 ├── README.md / README-zh.md   # Bilingual overview, navigation & install
 ├── LICENSE                    # CANN OSL 2.0, repo-wide
 ├── CONTRIBUTING.md            # Contribution guide (Issue / PR conventions)
@@ -58,7 +58,7 @@ cannbot-relay/
     └── sift/                  # Audit & evaluation (Audit / Evaluate)
 ```
 
-Extending Relay = adding a new package under `packages/`, plug-and-play.
+Extending Sentry = adding a new package under `packages/`, plug-and-play.
 
 ## Contributing
 
@@ -70,7 +70,7 @@ See [SECURITY.md](SECURITY.md) for the security statement (public URL declaratio
 
 ## Feedback
 
-- [GitCode Issue](https://gitcode.com/cann/cannbot-relay/issues) — bugs, feature requests, docs
+- [GitCode Issue](https://gitcode.com/cann/cannbot-sentry/issues) — bugs, feature requests, docs
 - [CANNBot SIG](https://gitcode.com/cann/community/tree/master/CANN/sigs/cannbot) — governance and project direction
 
 ## License

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# CANNBot-Relay unified installer.
+# CANNBot-Sentry unified installer.
 # Usage:
 #   ./install.sh                  # interactive / help
 #   ./install.sh insight          # single package
@@ -21,7 +21,7 @@ ALL_PACKAGES=(insight cpx sift)
 
 usage() {
     cat <<EOF
-CANNBot-Relay installer
+CANNBot-Sentry installer
 
 Usage: ./install.sh [package ... | all]
 

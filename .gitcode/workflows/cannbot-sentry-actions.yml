@@ -1,4 +1,4 @@
-name: PR-pipeline_cannbot-relay
+name: PR-pipeline_cannbot-sentry
 
 concurrency:
   max: 5

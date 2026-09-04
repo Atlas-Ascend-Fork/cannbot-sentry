@@ -1,6 +1,6 @@
 # 贡献指南
 
-欢迎参与 CANNBot-Relay 建设。本仓库是面向 LLM 编码 Agent（opencode / Claude Code）的观测 · 审计 · 评测中继站，采用 Monorepo（一仓一包）组织方式。本文档说明如何参与贡献。
+欢迎参与 CANNBot-Sentry 建设。本仓库是面向 LLM 编码 Agent（opencode / Claude Code）的观测 · 审计 · 评测哨站，采用 Monorepo（一仓一包）组织方式。本文档说明如何参与贡献。
 
 📖 [中文文档](README-zh.md) · [English](README.md) · [安全声明](SECURITY.md) · [许可证](LICENSE)
 
@@ -42,7 +42,7 @@
 
 ### 何时需要先提交 Issue
 
-以下情况**必须**先提交 [Issue](https://gitcode.com/cann/cannbot-relay/issues) 进行方案讨论：
+以下情况**必须**先提交 [Issue](https://gitcode.com/cann/cannbot-sentry/issues) 进行方案讨论：
 
 - 在 `packages/` 下新增一个包
 - 对现有包的功能范围做重大调整
@@ -84,4 +84,4 @@
 - [安全声明](SECURITY.md) — 公网地址声明、文件权限、漏洞反馈
 - [许可证](LICENSE) — CANN Open Software License v2.0
 - [所属 SIG](https://gitcode.com/cann/community/tree/master/CANN/sigs/cannbot) — CANNBot SIG
-- [问题反馈](https://gitcode.com/cann/cannbot-relay/issues) — GitCode Issue
+- [问题反馈](https://gitcode.com/cann/cannbot-sentry/issues) — GitCode Issue

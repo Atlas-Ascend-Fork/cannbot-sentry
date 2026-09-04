@@ -1,4 +1,4 @@
-# CANNBot-Relay 文档
+# CANNBot-Sentry 文档
 
 跨包文档目录（架构 · 安装）。各包自有文档见 `packages/<pkg>/`。
 

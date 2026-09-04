@@ -1,10 +1,10 @@
-# CANNBot-Relay
+# CANNBot-Sentry
 
 ![License](https://img.shields.io/badge/License-CANN%20OSL%20v2.0-blue?style=flat-square)
 
 **[English](README.md)**
 
-CANNBot-Relay 是面向 LLM 编码 Agent（opencode / Claude Code）的**观测 · 审计 · 评测**中继站。Agent 在场上跑，Relay 在场边：**记录现场 · 复盘事实 · 评鉴质量**。
+CANNBot-Sentry 是面向 LLM 编码 Agent（opencode / Claude Code）的**观测 · 审计 · 评测**哨站。Agent 在场上跑，Sentry 在场边：**记录现场 · 复盘事实 · 评鉴质量**。
 
 > 仓库状态：新建仓库。正在将 [cannbot-skills](https://gitcode.com/cann/cannbot-skills)（`plugins-community/cannbot-insight`）的主体代码迁入 `packages/insight` 与 `packages/cpx`，详见[目录结构](#目录结构)。
 
@@ -22,8 +22,8 @@ CANNBot-Relay 是面向 LLM 编码 Agent（opencode / Claude Code）的**观测 
 ## 源码下载
 
 ```bash
-git clone https://gitcode.com/cann/cannbot-relay.git
-cd cannbot-relay
+git clone https://gitcode.com/cann/cannbot-sentry.git
+cd cannbot-sentry
 ```
 
 ## 安装
@@ -43,7 +43,7 @@ cd cannbot-relay
 Monorepo，`packages/` 下一个目录 = 一个独立安装包。包间零 import、零构建依赖，仅通过运行时契约（数据格式、CLI 接口）耦合。
 
 ```
-cannbot-relay/
+cannbot-sentry/
 ├── README.md / README-zh.md   # 双语总览 · 导航与安装
 ├── LICENSE                    # CANN OSL 2.0 · 全仓唯一
 ├── CONTRIBUTING.md            # 贡献指南（Issue / PR 规范）
@@ -58,7 +58,7 @@ cannbot-relay/
     └── sift/                  # 审计 · 评测
 ```
 
-拓展 Relay = 在 `packages/` 下新增一个包，即插即用。
+拓展 Sentry = 在 `packages/` 下新增一个包，即插即用。
 
 ## 贡献指南
 
@@ -66,7 +66,7 @@ cannbot-relay/
 
 ## 问题反馈
 
-- [GitCode Issue](https://gitcode.com/cann/cannbot-relay/issues) — Bug / 功能建议 / 文档问题
+- [GitCode Issue](https://gitcode.com/cann/cannbot-sentry/issues) — Bug / 功能建议 / 文档问题
 - [CANNBot SIG](https://gitcode.com/cann/community/tree/master/CANN/sigs/cannbot) — 社区治理与项目方向
 
 ## 许可证

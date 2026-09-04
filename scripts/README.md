@@ -1,4 +1,4 @@
-# CANNBot-Relay 治理脚本
+# CANNBot-Sentry 治理脚本
 
 仓级治理脚本目录，当前规划：
 
