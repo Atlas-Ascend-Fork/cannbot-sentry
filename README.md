@@ -28,7 +28,14 @@ cd cannbot-sentry
 
 ## Installation
 
-The unified installer supports installing a **single package**, a **combination**, or **all**:
+**npm (no source clone)** — published packages install straight from the public npm registry:
+
+```bash
+npm install -g cannbot-insight   # insight Web UI (cannbot-insight / cbi)
+npm install -g cannbot-proxy     # cpx capture proxy (cpx)
+```
+
+**From source** — the unified installer supports installing a **single package**, a **combination**, or **all**:
 
 ```bash
 ./install.sh insight   # single package

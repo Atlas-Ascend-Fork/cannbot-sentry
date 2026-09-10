@@ -28,7 +28,14 @@ cd cannbot-sentry
 
 ## 安装
 
-统一安装入口支持**单包 / 组合 / 全量**三种方式：
+**npm（免克隆源码）**——已发布到公共 npm registry，一条命令安装：
+
+```bash
+npm install -g cannbot-insight   # insight 观测平台（cannbot-insight / cbi）
+npm install -g cannbot-proxy     # cpx 捕获代理（cpx）
+```
+
+**源码安装**——统一安装入口支持**单包 / 组合 / 全量**三种方式：
 
 ```bash
 ./install.sh insight   # 安装单个包
