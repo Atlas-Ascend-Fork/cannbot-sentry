@@ -35,6 +35,8 @@ npm install -g cannbot-insight   # insight Web UI (cannbot-insight / cbi)
 npm install -g cannbot-proxy     # cpx capture proxy (cpx)
 ```
 
+Shell tab completion is configured automatically on install (bash/zsh); open a new terminal and `cpx <TAB>` just works.
+
 **From source** — the unified installer supports installing a **single package**, a **combination**, or **all**:
 
 ```bash

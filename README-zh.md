@@ -35,6 +35,8 @@ npm install -g cannbot-insight   # insight 观测平台（cannbot-insight / cbi�
 npm install -g cannbot-proxy     # cpx 捕获代理（cpx）
 ```
 
+Tab 补全在安装时自动装配（bash/zsh），新开终端 `cpx <TAB>` 即可用。
+
 **源码安装**——统一安装入口支持**单包 / 组合 / 全量**三种方式：
 
 ```bash
