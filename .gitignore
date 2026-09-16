@@ -33,6 +33,8 @@ tests/**/sandboxes/
 *.sqlite3
 captures/
 *.tgz
+.context-pack/
+**/.context-pack/
 
 # IDE 与系统文件
 .idea/

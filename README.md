@@ -6,7 +6,7 @@
 
 CANNBot-Sentry is the sentry post of **Observation · Audit · Evaluation** for LLM coding agents (opencode / Claude Code). While agents run on the field, Sentry stands on the sideline: **recording what happened, replaying the facts, and judging the quality**.
 
-> Status: this repository is newly created. Packages are being migrated from [cannbot-skills](https://gitcode.com/cann/cannbot-skills) (`plugins-community/cannbot-insight`) into `packages/insight` and `packages/cpx`. See [Directory Structure](#directory-structure).
+> Status: `packages/insight` and `packages/cpx` have landed and are published on npm; `packages/sift` (Audit / Evaluate) is planned and not yet migrated. See [Directory Structure](#directory-structure).
 
 ## Core Capabilities
 
@@ -33,6 +33,9 @@ cd cannbot-sentry
 ```bash
 npm install -g cannbot-insight   # insight Web UI (cannbot-insight / cbi)
 npm install -g cannbot-proxy     # cpx capture proxy (cpx)
+# Same tools under the Context brand (session data fully interops):
+npm install -g context-insight   # insight Web UI (context-insight / ctxi)
+npm install -g context-cpx       # cpx capture proxy (cpx)
 ```
 
 Shell tab completion is configured automatically on install (bash/zsh); open a new terminal and `cpx <TAB>` just works.
@@ -41,11 +44,11 @@ Shell tab completion is configured automatically on install (bash/zsh); open a n
 
 ```bash
 ./install.sh insight   # single package
-./install.sh cpx sift  # combination
+./install.sh insight cpx  # combination
 ./install.sh all       # everything
 ```
 
-> The installer becomes fully functional as packages land in `packages/`. See each package's README for per-package requirements.
+> `insight` and `cpx` are installable now; `sift` stays a placeholder until it lands. See each package's README for per-package requirements.
 
 ## Directory Structure
 

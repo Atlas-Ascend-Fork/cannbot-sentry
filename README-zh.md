@@ -6,7 +6,7 @@
 
 CANNBot-Sentry 是面向 LLM 编码 Agent（opencode / Claude Code）的**观测 · 审计 · 评测**哨站。Agent 在场上跑，Sentry 在场边：**记录现场 · 复盘事实 · 评鉴质量**。
 
-> 仓库状态：新建仓库。正在将 [cannbot-skills](https://gitcode.com/cann/cannbot-skills)（`plugins-community/cannbot-insight`）的主体代码迁入 `packages/insight` 与 `packages/cpx`，详见[目录结构](#目录结构)。
+> 仓库状态：`packages/insight` 与 `packages/cpx` 已迁入落地（并已发布 npm）；`packages/sift`（审计 / 评测）规划中、待迁入，详见[目录结构](#目录结构)。
 
 ## 核心能力
 
@@ -33,6 +33,9 @@ cd cannbot-sentry
 ```bash
 npm install -g cannbot-insight   # insight 观测平台（cannbot-insight / cbi）
 npm install -g cannbot-proxy     # cpx 捕获代理（cpx）
+# Context 品牌同款（会话数据完全互通）：
+npm install -g context-insight   # insight 观测平台（context-insight / ctxi）
+npm install -g context-cpx       # cpx 捕获代理（cpx）
 ```
 
 Tab 补全在安装时自动装配（bash/zsh），新开终端 `cpx <TAB>` 即可用。
@@ -41,11 +44,11 @@ Tab 补全在安装时自动装配（bash/zsh），新开终端 `cpx <TAB>` 即�
 
 ```bash
 ./install.sh insight   # 安装单个包
-./install.sh cpx sift  # 组合安装
+./install.sh insight cpx  # 组合安装
 ./install.sh all       # 全量安装
 ```
 
-> 安装脚本将随 packages/ 各包迁入逐步完全可用，各包前置要求见其 README。
+> insight 与 cpx 现已可安装；sift 待迁入暂为占位。各包前置要求见其 README。
 
 ## 目录结构
 
