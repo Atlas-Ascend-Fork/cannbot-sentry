@@ -4,7 +4,13 @@
 
 **[中文文档](README-zh.md)**
 
-CANNBot-Sentry is the sentry post of **Observation · Audit · Evaluation** for LLM coding agents (opencode / Claude Code). While agents run on the field, Sentry stands on the sideline: **recording what happened, replaying the facts, and judging the quality**.
+**CANNBot** is the infra agent layer of the [CANN](https://hiascend.com/software/cann) community — agents for operator development in AscendC/PyPTO/TileLang/Triton and other languages, model migration and inference optimization, extending to more CANN development scenarios such as graph mode and Runtime.
+
+This repo (cannbot-sentry) is its observability repo, providing **Observation · Audit · Evaluation** for LLM coding agents (opencode / Claude Code). The group also includes [cannbot](https://gitcode.com/cann/cannbot), [cannbot-skills](https://gitcode.com/cann/cannbot-skills), [cannbot-knowledge](https://gitcode.com/cann/cannbot-knowledge), [cannbot-dsl](https://gitcode.com/cann/cannbot-dsl) and [cann-bench](https://gitcode.com/cann/cann-bench), as mapped below.
+
+![CANNBot repo map](docs/figures/cannbot-repo-map.png)
+
+While agents run on the field, Sentry stands on the sideline: **recording what happened, replaying the facts, and judging the quality**.
 
 > Status: `packages/insight` and `packages/cpx` have landed and are published on npm; `packages/sift` (Audit / Evaluate) is planned and not yet migrated. See [Directory Structure](#directory-structure).
 

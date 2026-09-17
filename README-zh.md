@@ -4,7 +4,13 @@
 
 **[English](README.md)**
 
-CANNBot-Sentry 是面向 LLM 编码 Agent（opencode / Claude Code）的**观测 · 审计 · 评测**哨站。Agent 在场上跑，Sentry 在场边：**记录现场 · 复盘事实 · 评鉴质量**。
+CANNBot 是 [CANN](https://hiascend.com/software/cann) 社区的 Infra 智能体层，用 Agent 完成 AscendC/PyPTO/TileLang/Triton 等各类语言的算子开发、模型迁移与推理优化，并延伸至图模式、Runtime 等更多 CANN 开发场景。
+
+本仓（cannbot-sentry）是其观测仓，面向 LLM 编码 Agent（opencode / Claude Code）提供**观测 · 审计 · 评测**能力；仓群还包括 [cannbot](https://gitcode.com/cann/cannbot)、[cannbot-skills](https://gitcode.com/cann/cannbot-skills)、[cannbot-knowledge](https://gitcode.com/cann/cannbot-knowledge)、[cannbot-dsl](https://gitcode.com/cann/cannbot-dsl)、[cann-bench](https://gitcode.com/cann/cann-bench) 等仓库，结构如下。
+
+![CANNBot 仓群结构](docs/figures/cannbot-repo-map.png)
+
+Agent 在场上跑，Sentry 在场边：**记录现场 · 复盘事实 · 评鉴质量**。
 
 > 仓库状态：`packages/insight` 与 `packages/cpx` 已迁入落地（并已发布 npm）；`packages/sift`（审计 / 评测）规划中、待迁入，详见[目录结构](#目录结构)。
 
