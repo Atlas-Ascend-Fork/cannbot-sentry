@@ -1,0 +1,792 @@
+# Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
+# This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+# CANN Open Software License Agreement Version 2.0 (the "License").
+# Please refer to the License for details. You may not use this file except in compliance with the License.
+# THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+# INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+# See LICENSE in the root of the software repository for the full text of the License.
+
+"""Benchmark aggregator — merges run results into benchmark.json."""
+
+from __future__ import annotations
+
+import json
+import logging
+import math
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import NamedTuple
+
+from sift.execution.analysis_suite import run_analysis
+from sift.execution.comparison_suite import run_comparisons
+from sift.execution.error_triage import classify_error
+from sift.execution.run_paths import index_runs, is_nested
+from sift.models import (
+    AnomalyReport,
+    BenchmarkData,
+    BenchmarkMetadata,
+    CalibrationReport,
+    CalibrationSummary,
+    ComparisonSummary,
+    RunAnomaly,
+    RunResultEntry,
+    RunResultMetrics,
+    StatsValue,
+)
+from sift.parser import parse_skill_md
+from sift.stats import normalized_gain
+from sift.text_output import write_text
+from sift.utils import DurationAccumulator, TokenUsageAccumulator
+
+
+def calculate_stats(values: list[float]) -> StatsValue:
+    if not values:
+        return StatsValue(mean=0.0, stddev=0.0, min=0.0, max=0.0)
+    n = len(values)
+    mean = sum(values) / n
+    stddev = math.sqrt(sum((x - mean) ** 2 for x in values) / (n - 1)) if n > 1 else 0.0
+    return StatsValue(
+        mean=round(mean, 4),
+        stddev=round(stddev, 4),
+        min=round(min(values), 4),
+        max=round(max(values), 4),
+    )
+
+
+def _real_model_from_transcript(run_dir: Path) -> str:
+    """从 transcript.jsonl 的 result event.modelUsage key 抓真实模型名。
+
+    transcript.jsonl 是 cc stream-json 原文落盘,result event 顶层 modelUsage =
+    {真实模型名: {token 明细}};取第一个 key(常规单模型)。无 transcript / 无
+    result event / 解析失败 → ""。comparator/analyzer 不经 cc stream-json、
+    不落 transcript.jsonl,故三模型字段都借 executor 抓的这个真名(三者同源:同一 CLI/env 解析)。
+    """
+    tp = run_dir / "transcript.jsonl"
+    if not tp.exists():
+        return ""
+    try:
+        for line in tp.read_text(encoding="utf-8").splitlines():
+            try:
+                ev = json.loads(line)
+            except json.JSONDecodeError:
+                logging.getLogger(__name__).debug("Optional operation failed; continuing with fallback", exc_info=True)
+                continue
+            if not (ev.get("type") == "result"):
+                continue
+            mu = ev.get("modelUsage") or {}
+            if isinstance(mu, dict) and mu:
+                return next(iter(mu))
+    except Exception:
+        logging.getLogger(__name__).debug("Optional operation failed; continuing with fallback", exc_info=True)
+    return ""
+
+
+def _collect_per_side_calibration(iteration_dir: Path, sides: list | None) -> dict:
+    """按 side 读 per-run calibration.json,聚合返回 `{label: [(eval_id, run_n, CalibrationReport), ...] | None}`。
+
+    sides 真实结构(见 runner.build_sides):`[(config_name, inject_skill_path_or_None, label), ...]`。
+    config 目录 = `iteration_dir / config_name`(tuple 里**不存**目录,只存 config_name)。
+    label 作 dict key(gate 消费侧认 label:"with"/"without" 或 "v1"/"v2")。
+
+    index_runs 取最终 retry 去重(防 retry-glob bug 类:base+retry 只算最终 retry)。
+    缺 calibration.json / 解析失败 → 该 run 跳过(不抛);整侧无报告 → 该 side None。
+    sides=None → 落默认 [("with_skill", None, "with"), ("without_skill", None, "without")]。
+    """
+    if not sides:
+        sides = [("with_skill", None, "with"), ("without_skill", None, "without")]
+    per_side: dict[str, list[tuple[int, int, CalibrationReport]] | None] = {}
+    for config_name, _inject_skill, label in sides:
+        cfg_dir = iteration_dir / config_name
+        if not cfg_dir.is_dir():
+            per_side[label] = None
+            continue
+        run_map = index_runs(cfg_dir, is_nested(cfg_dir))
+        reports: list[tuple[int, int, CalibrationReport]] = []
+        for (eval_name, run_n), run_dir in run_map.items():
+            cal_path = run_dir / "calibration.json"
+            if not cal_path.exists():
+                continue
+            try:
+                rep = CalibrationReport.model_validate_json(cal_path.read_text(encoding="utf-8"))
+            except Exception:
+                logging.getLogger(__name__).debug("Optional operation failed; continuing with fallback", exc_info=True)
+                continue
+            # eval_name 形如 "eval-1"(nested)或 None(flat 单桶);→ 数字 eval_id
+            eval_id = int(str(eval_name).split("-")[-1]) if eval_name else 0
+            reports.append((eval_id, run_n, rep))
+        per_side[label] = reports or None
+    return per_side
+
+
+class _BenchmarkRunCollector:
+    """Accumulate run data, usage, and timing for a single benchmark."""
+
+    def __init__(self, name: str):
+        self.skill_name = name
+        self.runs: list[RunResultEntry] = []
+        self.configs_data: dict[str, list[dict]] = {}
+        self.anomalies: list[RunAnomaly] = []
+        self.duration_map: dict[str, list[dict]] = {}
+        self.real_model = ""  # 从 transcript 抓的真实模型名(executor 落盘,三模型字段复用)
+        self.grader_acc = TokenUsageAccumulator()  # per-run grader(timing.json 汇总)
+        self.audit_acc = TokenUsageAccumulator()  # per-run compliance.json rollup
+        self.executor_total = 0  # per-run executor token(timing.json total_tokens)
+        self.grader_dur = DurationAccumulator()  # per-run grader(timing.json grader_duration_seconds)
+        self.audit_dur = DurationAccumulator()  # per-run compliance.json duration_seconds
+        self.executor_dur = 0.0  # per-run executor 时长(timing total_duration_seconds)
+
+    @staticmethod
+    def _run_timing(grading, run_dir):
+        timing = grading.get("timing") or {}
+        time_seconds = timing.get("total_duration_seconds", 0.0)
+        tokens = timing.get("total_tokens", 0)
+
+        timing_path = run_dir / "timing.json"
+        if time_seconds == 0.0 and timing_path.exists():
+            td = json.loads(timing_path.read_text(encoding="utf-8"))
+            time_seconds = td.get("total_duration_seconds", 0.0)
+            tokens = td.get("total_tokens", tokens)
+        return tokens, time_seconds, timing_path
+
+    @staticmethod
+    def _grading_entry_data(grading, summary, time_seconds, tokens):
+        metrics = grading.get("execution_metrics") or {}
+        tool_calls = metrics.get("total_tool_calls", 0)
+
+        raw_expectations = grading.get("expectations") or []
+
+        # Track uneval count
+        uneval_count = sum(1 for e in raw_expectations if e.get("verdict") == "UNEVAL")
+
+        notes = []
+        uns = grading.get("user_notes_summary") or {}
+        notes.extend(uns.get("uncertainties") or [])
+        notes.extend(uns.get("needs_review") or [])
+        notes.extend(uns.get("workarounds") or [])
+
+        if uneval_count > 0:
+            notes.append(f"UNEVAL: {uneval_count} assertion(s) could not be evaluated")
+
+        entry_data = {
+            "pass_rate": summary.get("pass_rate", 0.0),
+            "pass_rate_programmatic": summary.get("pass_rate_programmatic"),
+            "pass_rate_llm": summary.get("pass_rate_llm"),
+            "time_seconds": time_seconds,
+            "tokens": tokens,
+        }
+        return tool_calls, metrics, raw_expectations, notes, entry_data
+
+    def collect(self, iteration_dir: Path) -> None:
+        """Read each configuration and its final run attempts in stable order."""
+        for config_dir in sorted(iteration_dir.iterdir()):
+            if not config_dir.is_dir():
+                continue
+            config_name = config_dir.name
+            run_dirs = list(index_runs(config_dir, is_nested(config_dir)).values())
+            if not run_dirs:
+                continue
+            if config_name not in self.configs_data:
+                self.configs_data[config_name] = []
+            for run_dir in run_dirs:
+                self._collect_run(run_dir, config_name)
+
+    def _collect_run(self, run_dir: Path, config_name: str) -> None:
+        """Collect one final attempt without counting superseded retries."""
+        if not self.real_model:
+            self.real_model = _real_model_from_transcript(run_dir)
+        eval_id, run_number, retry_count = _run_identifiers(run_dir)
+
+        grading_path = run_dir / "grading.json"
+        if not grading_path.exists():
+            return
+
+        grading = json.loads(grading_path.read_text(encoding="utf-8"))
+        error_str = grading.get("error", "") or ""  # 失败三角化输入(纯诊断,不进判决)
+        summary = grading.get("summary", {})
+
+        tokens, time_seconds, timing_path = self._run_timing(grading, run_dir)
+
+        # Phase 2: per-run token 累加 / Phase 2.5: per-run 时长累加
+        self._accumulate_run_usage(tokens, time_seconds, timing_path, run_dir)
+
+        tool_calls, metrics, raw_expectations, notes, entry_data = self._grading_entry_data(
+            grading, summary, time_seconds, tokens
+        )
+
+        # eval 名从 run_debug.json 取真名(如 happy_path_basic_categorization);
+        # 缺失则空,viewer fallback "Eval {id}"。旧用 skill 名(name)→ 全 eval 同名,
+        # 检查点总览 / 逐项表只能显 "Eval N"。
+        eval_name = ""
+        debug_path = run_dir / "run_debug.json"
+        if debug_path.exists():
+            try:
+                eval_name = json.loads(debug_path.read_text(encoding="utf-8")).get("eval_name") or ""
+            except (json.JSONDecodeError, OSError):
+                logging.getLogger(__name__).debug("Optional operation failed; continuing with fallback", exc_info=True)
+
+        triage = classify_error(error_str) if error_str else None
+        entry = RunResultEntry(
+            eval_id=eval_id,
+            eval_name=eval_name,
+            configuration=config_name,
+            run_number=run_number,
+            result=RunResultMetrics(
+                pass_rate=summary.get("pass_rate", 0.0),
+                passed=summary.get("passed", 0),
+                failed=summary.get("failed", 0),
+                total=summary.get("total", 0),
+                time_seconds=time_seconds,
+                tokens=tokens,
+                tool_calls=tool_calls,
+                errors=metrics.get("errors_encountered", 0),
+                # 双率透到 per-(eval,run):检查点总览 + 逐项表 3-dim 列用(与 entry_data 同源)
+                pass_rate_programmatic=summary.get("pass_rate_programmatic"),
+                pass_rate_llm=summary.get("pass_rate_llm"),
+            ),
+            expectations=raw_expectations,
+            notes=notes,
+            retry_count=retry_count,
+            # 失败三角化(纯诊断,不进判决):从 grading.error 抽根因 + 建议
+            error_root_cause=triage.root_cause if triage else None,
+            error_suggestion=triage.suggestion if triage else None,
+        )
+        self.runs.append(entry)
+        self.configs_data[config_name].append(entry_data)
+
+        # Track duration for outlier detection
+        self._remember_run_duration(eval_id, config_name, run_number, time_seconds)
+
+    def _accumulate_run_usage(self, tokens, time_seconds, timing_path, run_dir):
+        self.executor_total += tokens
+        self.executor_dur += time_seconds  # timing.total_duration_seconds(:178 已读)
+        if timing_path.exists():
+            try:
+                _tj = json.loads(timing_path.read_text(encoding="utf-8"))
+                gtu = _tj.get("grader_token_usage") or {}
+                if gtu:
+                    self.grader_acc.add(gtu, count=gtu.get("calls", 1))
+                self.grader_dur.add(_tj.get("grader_duration_seconds") or 0.0)
+            except Exception:
+                logging.getLogger(__name__).debug("Optional operation failed; continuing with fallback", exc_info=True)
+        comp_path = run_dir / "compliance.json"
+        if comp_path.exists():
+            try:
+                _cj = json.loads(comp_path.read_text(encoding="utf-8"))
+                ctu = _cj.get("token_usage") or {}
+                if ctu:
+                    self.audit_acc.add(ctu, count=ctu.get("calls", 1))
+                self.audit_dur.add(_cj.get("duration_seconds") or 0.0)
+            except Exception:
+                logging.getLogger(__name__).debug("Optional operation failed; continuing with fallback", exc_info=True)
+
+    def _remember_run_duration(self, eval_id, config_name, run_number, time_seconds):
+        key = f"{eval_id}-{config_name}"
+        if key not in self.duration_map:
+            self.duration_map[key] = []
+        self.duration_map[key].append(
+            {
+                "eval_id": eval_id,
+                "eval_name": self.skill_name,
+                "config": config_name,
+                "run_number": run_number,
+                "duration_seconds": time_seconds,
+            }
+        )
+
+
+def _run_identifiers(run_dir):
+    run_number = int(run_dir.name.split("-")[1])
+    retry_count = 0
+    if "-retry-" in run_dir.name:
+        try:
+            retry_count = int(run_dir.name.rsplit("-retry-", 1)[1])
+        except (ValueError, IndexError):
+            logging.getLogger(__name__).debug("Optional operation failed; continuing with fallback", exc_info=True)
+    eval_id = 0
+    parent_name = run_dir.parent.name
+    if parent_name.startswith("eval-"):
+        try:
+            eval_id = int(parent_name.split("-")[1])
+        except (ValueError, IndexError):
+            logging.getLogger(__name__).debug("Optional operation failed; continuing with fallback", exc_info=True)
+    return eval_id, run_number, retry_count
+
+
+class _BenchmarkTokenTotals(NamedTuple):
+    """完成累加后供报告序列化使用的各阶段用量。"""
+
+    grader: dict
+    comparator: dict
+    analyzer: dict
+    scoring: TokenUsageAccumulator
+    audit: dict
+    total: TokenUsageAccumulator
+
+
+class _PhaseTwoUsage(NamedTuple):
+    """比较和分析阶段各自的 token 与耗时累加器。"""
+
+    comparator_acc: TokenUsageAccumulator
+    analyzer_acc: TokenUsageAccumulator
+    comparator_dur: DurationAccumulator
+    analyzer_dur: DurationAccumulator
+
+
+class _BenchmarkEnrichment(NamedTuple):
+    """补充比较及分析结果时共用的配置。"""
+
+    sides: list | None
+    real_model: str
+    usage: _PhaseTwoUsage
+
+
+class _AggregationTiming(NamedTuple):
+    """聚合阶段的墙钟边界，与各模型调用耗时分开统计。"""
+
+    phase1_wall: float
+    phase2_start: float
+    read_end: float
+    comparison_end: float
+    analysis_start: float
+    analysis_end: float
+
+
+class BenchmarkAggregator:
+    def __init__(self, model: str | None = None, timeout: int = 120, enable_llm: bool = True):
+        self.model = model
+        self.timeout = timeout
+        # 盲比较只服务于主观题;programmatic-only(enable_llm=False)时 run_comparisons 跳过
+        self.enable_llm = enable_llm
+
+    @staticmethod
+    def _load_checkpoints(iteration_dir: Path) -> list[dict]:
+        for config_dir in sorted(iteration_dir.iterdir()):
+            if not config_dir.is_dir():
+                continue
+            for run_dir in index_runs(config_dir, is_nested(config_dir)).values():
+                cp_path = run_dir / "checkpoints.json"
+                if not (cp_path.exists()):
+                    continue
+                try:
+                    return json.loads(cp_path.read_text(encoding="utf-8"))
+                except Exception:
+                    logging.getLogger(__name__).debug(
+                        "Optional operation failed; continuing with fallback",
+                        exc_info=True,
+                    )
+        return []
+
+    @staticmethod
+    def _guess_runs_per_config(runs: list[RunResultEntry]) -> int:
+        if not runs:
+            return 0
+        configs: dict[str, set[int]] = {}
+        for r in runs:
+            configs.setdefault(r.configuration, set()).add(r.run_number)
+        return min(len(v) for v in configs.values()) if configs else 0
+
+    def aggregate(
+        self,
+        iteration_dir: Path,
+        skill_path: Path = Path(),
+        sides: list | None = None,
+        phase1_wall: float = 0.0,
+    ) -> BenchmarkData:
+        # phase2 墙钟:aggregate 自身耗时(读 run 产物 + comparator + analyzer + 字段构建)。
+        # total = phase1_wall(调用方传,从命令起点含 setup)+ phase2_wall,严格加总(见末尾)。
+        _p2_start = time.perf_counter()
+        write_text("aggregate: reading run results...\n", stream=sys.stderr)
+        sys.stderr.flush()
+
+        name = ""
+        if skill_path and (skill_path / "SKILL.md").exists():
+            name, _, _, _, _ = parse_skill_md(skill_path)
+
+        # Phase 2: LLM token 累加(scoring = grader+comparator+analyzer 分计;audit = compliance rollup)
+        collected = _BenchmarkRunCollector(name)
+        comparator_acc = TokenUsageAccumulator()  # 盲比较(run_comparisons 回灌)
+        analyzer_acc = TokenUsageAccumulator()  # 深度分析(run_analysis 回灌)
+        # Phase 2.5: 耗时累加(分列=各类调用时长加总;total=墙钟,独立测,见末尾 rollup)
+        comparator_dur = DurationAccumulator()  # 盲比较
+        analyzer_dur = DurationAccumulator()  # 深度分析
+
+        usage = _PhaseTwoUsage(comparator_acc, analyzer_acc, comparator_dur, analyzer_dur)
+        collected.collect(iteration_dir)
+
+        # Detect outliers
+        _collect_duration_anomalies(collected)
+
+        # Also check direct timeouts via stop_reason
+        _collect_direct_timeouts(iteration_dir, collected, name)
+
+        enrichment = _BenchmarkEnrichment(sides, collected.real_model, usage)
+        main_benchmark = self._initial_benchmark(iteration_dir, skill_path, collected)
+
+        _read_end = time.perf_counter()  # read+summarize 阶段结束(_p2_start→此 = read_runs_wall)
+        main_benchmark = self._add_comparisons(main_benchmark, iteration_dir, enrichment)
+        _cmp_end = time.perf_counter()  # comparator 阶段墙钟(_read_end→此)
+
+        main_benchmark = _add_calibration_summary(main_benchmark, iteration_dir, sides)
+
+        _an_start = time.perf_counter()
+        main_benchmark = self._add_analysis(main_benchmark, iteration_dir, enrichment)
+        _an_end = time.perf_counter()  # analyzer 阶段墙钟
+
+        return _finish_benchmark(
+            main_benchmark,
+            collected,
+            usage,
+            _AggregationTiming(phase1_wall, _p2_start, _read_end, _cmp_end, _an_start, _an_end),
+        )
+
+    def _initial_benchmark(
+        self, iteration_dir: Path, skill_path: Path, collected: _BenchmarkRunCollector
+    ) -> BenchmarkData:
+        """从已收集的运行构造基础报告，保留首个检查点和全量 eval 索引。"""
+        name = collected.skill_name
+        retried_count = sum(1 for e in collected.runs if e.retry_count > 0)
+        unresolved_count = len(collected.anomalies)
+        anomaly_report = AnomalyReport(
+            anomalies=collected.anomalies,
+            total_runs=len(collected.runs),
+            anomaly_count=unresolved_count,
+            retried_count=retried_count,
+            unresolved_count=unresolved_count,
+        )
+
+        run_summary = summarize_benchmark(collected.configs_data)
+
+        checkpoints_data = self._load_checkpoints(iteration_dir)
+        # evals_run 用 runs(authoritative):_load_checkpoints 只读**首个** checkpoints.json
+        # (单 run、只见自己 eval)→ 计数偏少(如三 eval run 显 [1])。runs 涵盖所有已聚合 eval。
+        eval_ids = sorted(set(r.eval_id for r in collected.runs))
+
+        main_benchmark = BenchmarkData(
+            metadata=BenchmarkMetadata(
+                skill_name=name,
+                skill_path=str(skill_path),
+                executor_model=collected.real_model or self.model or "",
+                timestamp=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                evals_run=eval_ids,
+                runs_per_configuration=self._guess_runs_per_config(collected.runs),
+            ),
+            runs=collected.runs,
+            run_summary=run_summary,
+            anomaly_report=anomaly_report,
+        )
+
+        if checkpoints_data:
+            main_benchmark = main_benchmark.model_copy(update={"notes": checkpoints_data})
+
+        return main_benchmark
+
+    def _add_comparisons(
+        self, main_benchmark: BenchmarkData, iteration_dir: Path, context: _BenchmarkEnrichment
+    ) -> BenchmarkData:
+        """附加盲比较结果；失败时保留已读取的基础报告。"""
+        sides = context.sides
+        comparator_acc = context.usage.comparator_acc
+        comparator_dur = context.usage.comparator_dur
+        try:
+            comparisons = run_comparisons(
+                self,
+                iteration_dir,
+                sides=sides,
+                on_usage=comparator_acc.add,
+                on_duration=comparator_dur.add,
+            )
+            if comparisons:
+                # label 从 sides 透到 ComparisonSummary(默认 with/without)
+                label_a = sides[0][2] if sides else "with"
+                label_b = sides[1][2] if sides else "without"
+                main_benchmark = main_benchmark.model_copy(
+                    update={
+                        "comparisons": comparisons,
+                        "comparison_summary": ComparisonSummary.from_comparisons(comparisons, label_a, label_b),
+                        "metadata": main_benchmark.metadata.model_copy(
+                            update={"comparator_model": context.real_model or self.model or "default"}
+                        ),
+                    }
+                )
+        except Exception as exc:
+            logging.getLogger(__name__).warning("comparison step failed (%s), skipping", exc)
+        return main_benchmark
+
+    def _add_analysis(
+        self, main_benchmark: BenchmarkData, iteration_dir: Path, context: _BenchmarkEnrichment
+    ) -> BenchmarkData:
+        """附加分析说明及模型信息，保留失败前已经取得的部分结果。"""
+        analyzer_acc = context.usage.analyzer_acc
+        analyzer_dur = context.usage.analyzer_dur
+        try:
+            analysis_notes, analysis_result = run_analysis(
+                self,
+                iteration_dir,
+                main_benchmark,
+                on_usage=analyzer_acc.add,
+                on_duration=analyzer_dur.add,
+            )
+            if analysis_notes:
+                existing = list(main_benchmark.notes or [])
+                existing.extend(analysis_notes)
+                main_benchmark = main_benchmark.model_copy(update={"notes": existing})
+            if analysis_result:
+                main_benchmark = main_benchmark.model_copy(
+                    update={
+                        "analysis": analysis_result,
+                        "metadata": main_benchmark.metadata.model_copy(
+                            update={"analyzer_model": context.real_model or self.model or "default"}
+                        ),
+                    }
+                )
+        except Exception as exc:
+            logging.getLogger(__name__).warning("analysis step failed (%s), skipping", exc)
+        return main_benchmark
+
+
+def _collect_duration_anomalies(collected):
+    """Collect duration anomalies and mark their corresponding run entries."""
+    for dur_entries in collected.duration_map.values():
+        if not (len(dur_entries) >= 4):
+            continue
+        from sift.execution.runner import ABTestRunner
+
+        timeout_anomalies = ABTestRunner.detect_timeout(dur_entries, timeout_seconds=300)
+        outlier_anomalies = ABTestRunner.detect_outliers(dur_entries, threshold_multiplier=3.0)
+        for a in timeout_anomalies + outlier_anomalies:
+            collected.anomalies.append(
+                RunAnomaly(
+                    eval_id=a["eval_id"],
+                    eval_name=a.get("eval_name", ""),
+                    configuration=a["config"],
+                    run_number=a["run_number"],
+                    anomaly_type=a["anomaly_type"],
+                    detail=a["detail"],
+                    value=a["duration_seconds"],
+                )
+            )
+            # Mark corresponding run entry
+            _mark_anomalous_run(collected, a)
+
+
+def _mark_anomalous_run(collected, a):
+    for entry in collected.runs:
+        if not (
+            entry.eval_id == a["eval_id"] and entry.configuration == a["config"] and entry.run_number == a["run_number"]
+        ):
+            continue
+        entry.is_anomaly = True
+        entry.anomaly_reason = a["detail"]
+
+
+def _collect_direct_timeouts(iteration_dir, collected, name):
+    """Record explicit timeout stop reasons from the final run attempts."""
+    for config_dir in sorted(iteration_dir.iterdir()):
+        if not config_dir.is_dir():
+            continue
+        config_name = config_dir.name
+        for run_dir in index_runs(config_dir, is_nested(config_dir)).values():
+            debug_path = run_dir / "run_debug.json"
+            if not (debug_path.exists()):
+                continue
+            _read_run_timeout(debug_path, run_dir, collected, name, config_name)
+
+
+def _read_run_timeout(debug_path, run_dir, collected, name, config_name):
+    try:
+        debug = json.loads(debug_path.read_text(encoding="utf-8"))
+        stop_reason = debug.get("stop_reason", "")
+        if "timed_out" in stop_reason.lower():
+            duration = debug.get("duration_ms", 0) / 1000.0
+            eval_id = _timeout_eval_id(run_dir)
+            run_number = int(run_dir.name.split("-")[1])
+            collected.anomalies.append(
+                RunAnomaly(
+                    eval_id=eval_id,
+                    eval_name=debug.get("eval_name") or name,
+                    configuration=config_name,
+                    run_number=run_number,
+                    anomaly_type="timeout",
+                    detail=f"claude -p timed out after {duration:.0f}s",
+                    value=duration,
+                )
+            )
+    except Exception:
+        logging.getLogger(__name__).debug("Optional operation failed; continuing with fallback", exc_info=True)
+
+
+def _timeout_eval_id(run_dir):
+    parent_name = run_dir.parent.name
+    eval_id = 0
+    if parent_name.startswith("eval-"):
+        try:
+            eval_id = int(parent_name.split("-")[1])
+        except (ValueError, IndexError):
+            logging.getLogger(__name__).debug(
+                "Optional operation failed; continuing with fallback",
+                exc_info=True,
+            )
+    return eval_id
+
+
+def _add_calibration_summary(main_benchmark: BenchmarkData, iteration_dir: Path, sides: list | None) -> BenchmarkData:
+    """存在校准报告时汇总各侧数据，失败时保留已有报告。"""
+    try:
+        per_side_cal = _collect_per_side_calibration(iteration_dir, sides)
+        # 与 comparison_summary 对称:至少一侧有报告才钉 summary,否则留 None
+        # (无 calibration 数据 vs calibration 数据为空,前者更准确)
+        if any(per_side_cal.values()):
+            cal_summary = CalibrationSummary.from_per_side(per_side_cal)
+            main_benchmark = main_benchmark.model_copy(update={"calibration_summary": cal_summary})
+    except Exception as exc:
+        logging.getLogger(__name__).warning("calibration summary failed (%s), skipping", exc)
+
+    return main_benchmark
+
+
+def _finish_benchmark(
+    main_benchmark: BenchmarkData, collected: _BenchmarkRunCollector, usage: _PhaseTwoUsage, timing: _AggregationTiming
+) -> BenchmarkData:
+    """分别汇总 token 和耗时，保持墙钟总时长的舍入及相加规则。"""
+    comparator_acc, analyzer_acc, comparator_dur, analyzer_dur = usage
+    phase1_wall, _p2_start, _read_end, _cmp_end, _an_start, _an_end = timing
+    # Phase 2: 汇总 → llm_token_usage(scoring 合计 + grader/comparator/analyzer 分计 + audit/executor/total)
+    # 只在 snapshot 非空时 add(空 snapshot = 无调用,add({}) 会假计数)
+    grader_snapshot, comparator_snapshot, analyzer_snapshot, scoring_total, audit_snapshot, total_acc = (
+        _benchmark_token_totals(collected, usage)
+    )
+    # 墙钟分解:phase1 含 setup→run_ab_test(调用方传),phase2 = aggregate 自身。
+    # 各自 round 到 3 位后再加 → total 严格 == phase1_wall + phase2_wall(免 rounding 抖)。
+    # 其后的 static/vet/report 生成是写后步骤、自指不入 total(viewer 注明)。
+    p1_wall = round(phase1_wall or 0.0, 3)
+    p2_wall = round(time.perf_counter() - _p2_start, 3)
+    main_benchmark = main_benchmark.model_copy(
+        update={
+            "llm_token_usage": {
+                "scoring": scoring_total.snapshot(),  # grader+comparator+analyzer 合计(向后兼容)
+                "grader": grader_snapshot,
+                "comparator": comparator_snapshot,
+                "analyzer": analyzer_snapshot,
+                "audit": audit_snapshot,
+                "executor": {
+                    "input_tokens": collected.executor_total,
+                    "output_tokens": 0,
+                    "calls": 0,
+                },
+                "total": total_acc.snapshot(),
+            },
+            "llm_duration_seconds": {
+                "phase1_wall": p1_wall,
+                "phase2_wall": p2_wall,
+                # phase2 子墙钟(整段计时;与分列累计和是两维度):read+summarize / comparator / analyzer
+                "read_runs_wall": round(_read_end - _p2_start, 3),
+                "comparator_wall": round(_cmp_end - _read_end, 3),
+                "analyzer_wall": round(_an_end - _an_start, 3),
+                # 分列=各类 LLM 调用时长加总(并发叠加,可 ≥ 墙钟,与墙钟分解是两个维度)
+                "scoring": round(
+                    comparator_dur.snapshot() + analyzer_dur.snapshot() + collected.grader_dur.snapshot(),
+                    3,
+                ),
+                "grader": round(collected.grader_dur.snapshot(), 3),
+                "comparator": round(comparator_dur.snapshot(), 3),
+                "analyzer": round(analyzer_dur.snapshot(), 3),
+                "audit": round(collected.audit_dur.snapshot(), 3),
+                "executor": round(collected.executor_dur, 3),
+                "total": round(p1_wall + p2_wall, 3),  # = p1_wall + p2_wall(两者已 3 位,和恰 3 位)
+            },
+        }
+    )
+
+    return main_benchmark
+
+
+def _benchmark_token_totals(collected: _BenchmarkRunCollector, usage: _PhaseTwoUsage) -> _BenchmarkTokenTotals:
+    """汇总各阶段用量；执行器 token 不计为评分模型调用次数。"""
+    comparator_acc, analyzer_acc, _comparator_dur, _analyzer_dur = usage
+    grader_snapshot = collected.grader_acc.snapshot()
+    comparator_snapshot = comparator_acc.snapshot()
+    analyzer_snapshot = analyzer_acc.snapshot()
+    scoring_total = TokenUsageAccumulator()
+    for snap in (comparator_snapshot, analyzer_snapshot, grader_snapshot):
+        if not (snap):
+            continue
+        scoring_total.add(snap, count=snap.get("calls", 1))
+    audit_snapshot = collected.audit_acc.snapshot()
+    total_acc = TokenUsageAccumulator()
+    for snap in (scoring_total.snapshot(), audit_snapshot):
+        if not (snap):
+            continue
+        total_acc.add(snap, count=snap.get("calls", 1))
+    if collected.executor_total:
+        # executor 是 cc 跑任务的 token,非评分 LLM 调用 → 累 input 但不计 calls(count=0)
+        total_acc.add({"input_tokens": collected.executor_total, "output_tokens": 0}, count=0)
+    return _BenchmarkTokenTotals(
+        grader_snapshot, comparator_snapshot, analyzer_snapshot, scoring_total, audit_snapshot, total_acc
+    )
+
+
+def summarize_benchmark(configs_data: dict[str, list[dict]]) -> dict:
+    run_summary: dict[str, dict] = {}
+    configs = list(configs_data.keys())
+
+    for config in configs:
+        entries = configs_data[config]
+        if not entries:
+            run_summary[config] = {
+                "pass_rate": {"mean": 0.0, "stddev": 0.0, "min": 0.0, "max": 0.0},
+                "pass_rate_programmatic": None,
+                "pass_rate_llm": None,
+                "time_seconds": {
+                    "mean": 0.0,
+                    "stddev": 0.0,
+                    "min": 0.0,
+                    "max": 0.0,
+                },
+                "tokens": {"mean": 0, "stddev": 0, "min": 0, "max": 0},
+            }
+            continue
+
+        pr = calculate_stats([e["pass_rate"] for e in entries])
+        ts = calculate_stats([e["time_seconds"] for e in entries])
+        tk = calculate_stats([float(e["tokens"]) for e in entries])
+        # 双率:过滤 None(该 run 无该类 expectation),与 compliance 双率同构
+        prog_vals = [e["pass_rate_programmatic"] for e in entries if e.get("pass_rate_programmatic") is not None]
+        llm_vals = [e["pass_rate_llm"] for e in entries if e.get("pass_rate_llm") is not None]
+
+        run_summary[config] = {
+            "pass_rate": pr.model_dump(),
+            "pass_rate_programmatic": calculate_stats(prog_vals).model_dump() if prog_vals else None,
+            "pass_rate_llm": calculate_stats(llm_vals).model_dump() if llm_vals else None,
+            "time_seconds": ts.model_dump(),
+            "tokens": tk.model_dump(),
+        }
+
+    if len(configs) >= 2:
+        a = run_summary.get(configs[0], {})
+        b = run_summary.get(configs[1], {})
+        a_pr = a.get("pass_rate", {}).get("mean", 0)
+        b_pr = b.get("pass_rate", {}).get("mean", 0)
+        dpr = a_pr - b_pr
+        dts = a.get("time_seconds", {}).get("mean", 0) - b.get("time_seconds", {}).get("mean", 0)
+        dtk = a.get("tokens", {}).get("mean", 0) - b.get("tokens", {}).get("mean", 0)
+
+        def _dual_delta(field):
+            # 任一 config 无该类 expectation → delta 该项 None(不报假 0)
+            av = a.get(field)
+            bv = b.get(field)
+            if not av or not bv:
+                return None
+            return f"{av.get('mean', 0) - bv.get('mean', 0):+.2f}"
+
+        run_summary["delta"] = {
+            "pass_rate": f"{dpr:+.2f}",
+            "pass_rate_normalized_gain": f"{normalized_gain(b_pr, a_pr):+.2f}",
+            "pass_rate_programmatic": _dual_delta("pass_rate_programmatic"),
+            "pass_rate_llm": _dual_delta("pass_rate_llm"),
+            "time_seconds": f"{dts:+.1f}",
+            "tokens": f"{dtk:+.0f}",
+        }
+
+    return run_summary

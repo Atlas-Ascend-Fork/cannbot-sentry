@@ -1,0 +1,656 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>audit report</title>
+  <style>
+    /* :root 变量拷自 viewer.html,保持与路径3 scoring report 同一套配色 */
+    :root {
+      --bg: #faf9f5;
+      --surface: #ffffff;
+      --border: #e8e6dc;
+      --text: #141413;
+      --text-muted: #b0aea5;
+      --accent: #d97757;
+      --accent-hover: #c4613f;
+      --green: #788c5d;
+      --green-bg: #eef2e8;
+      --red: #c44;
+      --red-bg: #fceaea;
+      --header-bg: #141413;
+      --header-text: #faf9f5;
+      --radius: 6px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Lora', Georgia, serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 2rem;
+    }
+
+    #audit-root {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 2rem;
+      max-width: 960px;
+    }
+
+    h1 {
+      font-family: 'Poppins', system-ui, sans-serif;
+      font-size: 1.5rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+
+    .transcripts {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-bottom: 1.25rem;
+      word-break: break-all;
+    }
+
+    .summary {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.25rem;
+      font-size: 0.95rem;
+    }
+    .summary span { margin-right: 0.8rem; }
+
+    .badge-pass { color: var(--green); font-weight: 600; }
+    .badge-fail { color: var(--red); font-weight: 600; }
+    .badge-na { color: var(--accent); font-weight: 600; }
+    .badge-unresolved { color: var(--text-muted); font-weight: 600; }
+    .badge-indeterminate { color: var(--red); font-weight: 600; }
+    .badge-tokens { color: var(--text-muted); font-weight: normal; }
+
+    .derived { color: var(--text-muted); font-size: 0.9em; font-weight: normal; }
+
+    .findings, .warnings { margin-top: 1.5rem; }
+    .findings h2, .warnings h2 { font-family: 'Poppins', system-ui, sans-serif; font-size: 1.1rem; margin-bottom: 0.5rem; }
+    .finding { border: 1px solid var(--border); border-radius: var(--radius); padding: 0.75rem; margin-bottom: 0.5rem; }
+    .finding-head { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; font-size: 0.85rem; margin-bottom: 0.25rem; }
+    .finding-head .cat, .finding-head .src { color: var(--text-muted); background: var(--bg); padding: 0.05rem 0.4rem; border-radius: 3px; }
+    .qty { color: var(--text-muted); background: var(--bg); padding: 0.05rem 0.4rem; border-radius: 3px; font-size: 0.8rem; }
+    .finding-head .seq { color: var(--text-muted); font-weight: 600; }
+    .finding-head .related { font-size: 0.8rem; color: var(--text-muted); }
+    /* turn-refs:色由 verdict cls(badge-fail…)给,这里只给字号/字重 */
+    .finding-head .turn-refs { font-size: 0.8rem; font-weight: 600; }
+    .finding-head .ref-link { color: var(--accent); text-decoration: none; border-bottom: 1px dotted var(--accent); margin-left: 0.25rem; }
+    .finding-head .na-hint { color: var(--text-muted); font-size: 0.85em; font-weight: normal; }
+    .finding-head .method { color: var(--text-muted); margin-left: auto; }
+    .finding.FAIL { border-left: 3px solid var(--red); }
+    .finding.PASS { border-left: 3px solid var(--green); }
+    .finding.NA { border-left: 3px solid var(--accent); }
+    .finding.UNRESOLVED { border-left: 3px dotted var(--text-muted); }
+    .finding.INDETERMINATE { border-left: 3px dashed var(--red); }
+    .instruction { font-weight: 600; margin: 0.25rem 0; }
+    .evidence { color: var(--text-muted); font-size: 0.9rem; margin: 0.25rem 0; }
+    .instruction-anchor { color: var(--text-muted); font-size: 0.8rem; margin: 0.1rem 0 0.25rem; }
+    .transcript { color: var(--text-muted); font-size: 0.8rem; }
+    .src { color: var(--accent); border: 1px solid var(--accent); border-radius: 3px; padding: 0 0.3rem; margin-left: 0.3rem; font-size: 0.7rem; text-transform: uppercase; }
+    .noise { padding: 0.05rem 0.4rem; border-radius: 3px; font-size: 0.72rem; margin-left: 0.3rem; border: 1px solid; display: inline-block; }
+    .finding-head .method-prog { color: var(--green); }
+    .finding-head .method-llm { color: var(--text-muted); }
+    .warnings { background: var(--red-bg); border: 1px solid var(--red); border-radius: var(--radius); padding: 0.75rem 1rem; }
+    .warnings ul { margin-top: 0.25rem; padding-left: 1.25rem; }
+    .warnings li { color: var(--text); margin: 0.15rem 0; }
+
+    .header { margin-bottom: 0.5rem; }
+    .by-instruction { margin-top: 1.5rem; }
+    .stage-breakdown { margin-top: 1rem; }
+    .stage-breakdown > summary { cursor: pointer; font-size: 0.9rem; color: var(--accent); }
+    .stage-breakdown table { border-collapse: collapse; width: 100%; font-size: 0.85rem; margin-top: 0.4rem; }
+    .stage-breakdown th, .stage-breakdown td { border: 1px solid var(--border); padding: 0.3rem 0.6rem; text-align: left; }
+    .stage-breakdown th { background: var(--bg); font-weight: 600; }
+    .stage-breakdown .stage-note { color: var(--text-muted); font-size: 0.8rem; }
+    .stage-breakdown .kind-llm { color: var(--accent); font-weight: 600; }
+    .stage-breakdown .kind-prog { color: var(--text-muted); }
+    .stage-breakdown .stage-total td { font-weight: 600; border-top: 2px solid var(--border); }
+    .by-instruction h2 { font-family: 'Poppins', system-ui, sans-serif; font-size: 1.1rem; margin-bottom: 0.5rem; }
+    .by-instruction table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+    .by-instruction th, .by-instruction td { border: 1px solid var(--border); padding: 0.4rem 0.6rem; text-align: left; }
+    .by-instruction th { background: var(--bg); font-weight: 600; }
+    .by-instruction td.badge-fail { color: var(--red); font-weight: 600; }
+    .by-instruction td.badge-na { color: var(--accent); font-weight: 600; }
+    .by-instruction .seq-link { color: var(--accent); text-decoration: none; border-bottom: 1px dotted var(--accent); }
+    .by-instruction .seq-link:hover { border-bottom-style: solid; }
+    .findings-grouped { margin-top: 1.5rem; }
+    .findings-grouped h2 { font-family: 'Poppins', system-ui, sans-serif; font-size: 1.1rem; margin-bottom: 0.5rem; }
+    .findings-grouped details { border: 1px solid var(--border); border-radius: var(--radius); padding: 0.5rem 0.75rem; margin-bottom: 0.5rem; }
+    .findings-grouped summary { font-weight: 600; cursor: pointer; margin-bottom: 0.4rem; }
+    .findings-grouped details[open] { border-left: 3px solid var(--accent); }
+    .findings-grouped .finding { margin-bottom: 0.4rem; }
+    /* ③b 声明覆盖:组内未覆盖/未知指令行(复用 finding-head/instruction 排版) */
+    .coverage .cov-item { margin-bottom: 0.45rem; }
+    .coverage .seq-link { color: var(--accent); text-decoration: none; border-bottom: 1px dotted var(--accent); }
+    .coverage .seq-link:hover { border-bottom-style: solid; }
+    .coverage .all-covered { color: var(--text-muted); font-size: 0.85rem; }
+    .boundary { margin-top: 1.5rem; }
+    .boundary table { border-collapse: collapse; width: 100%; font-size: 0.9rem; margin-top: 0.4rem; }
+    .boundary th, .boundary td { border: 1px solid var(--border); padding: 0.4rem 0.6rem; text-align: left; vertical-align: top; }
+    .boundary th { background: var(--bg); font-weight: 600; }
+    .boundary td.dim { color: var(--text-muted); font-size: 0.85rem; word-break: break-all; }
+    .boundary .hint { color: var(--text-muted); font-size: 0.8rem; display: block; margin-top: 0.3rem; }
+    .suggest { margin-top: 1.5rem; }
+    .suggest-group { margin-top: 0.5rem; }
+    .suggest-item { margin: 0.5rem 0 0.8rem; padding-left: 0.6rem; border-left: 3px solid var(--border); }
+    .suggest-item .suggest-head { margin-bottom: 0.25rem; }
+    .suggest-item .evidence { color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem; }
+    .suggest-env { color: var(--text-muted); font-size: 0.88rem; margin-top: 0.5rem; }
+    .suggest .badge-pass, .suggest .badge-fail { font-size: 0.78rem; margin-left: 0.4rem; }
+  </style>
+</head>
+<body>
+  <div id="audit-root"></div>
+  <script>
+    /*__EMBEDDED_DATA__*/;
+    (function () {
+      // escapeHtml:防 evidence/instruction 里的 < > & " ' 破坏页面。放 IIFE 顶部(function 声明会提升,放最顶部最稳)。
+      function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, function (c) {
+          return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+        });
+      }
+
+      // FAIL 噪声判别徽章(tool_noise 疑似工具噪声 / skill_issue 疑似 skill 问题 / uncertain 待确认)。
+      // reasons 进 title hover 显。无 label / 未知 label → 空串。finding-head 与 by_instruction 表共用。
+      var NOISE_LABELS = {
+        tool_noise: { text: '疑似工具噪声', color: 'var(--text-muted)' },
+        skill_issue: { text: '疑似 skill 问题', color: 'var(--red)' },
+        uncertain: { text: '待确认', color: 'var(--accent)' }
+      };
+      function noiseBadge(label, reasons) {
+        var nl = NOISE_LABELS[label];
+        if (!nl) return '';
+        var title = escapeHtml((reasons || []).join('; '));
+        return '<span class="noise" style="color:' + nl.color + ';border-color:' + nl.color + ';" title="' + title + '">' + escapeHtml(nl.text) + '</span>';
+      }
+
+      // 数量判官徽章(control_flow==='quantity':带数量词的指令移交控制流判官判,程序计数或
+      // LLM 数量判定)。数量 finding/聚合行沿用原指令原文/原类别(对聚合透明),不挂徽章
+      // 报告里认不出是数量判定;ORDER 靠 synthetic + (顺序) 文案自明,不另标。
+      // finding 头(④ 明细)与概要表(③ 违规 FAIL 行)两处共用。
+      function qtyBadge() {
+        return '<span class="qty" title="带数量词的指令,由控制流判官判定(程序计数或 LLM 数量判定)">数量</span>';
+      }
+
+      // turn_refs:FAIL / INDETERMINATE 违规涉及的 turn(_turn_index,对应 transcript 里的 [Tn] 标记)。
+      // 仅 prohibition / step 类填(conditional / output 段级缺席恒空)。序号:cc/structured=会话全局,
+      // opencode 切片=段内 local。让 reader 回原 session 定位违规发生处。
+      // PASS / N/A / 段级缺席为空 → 返回 ''(无空占位)。
+      // 色随 verdict(reuse vd.cls:badge-fail / badge-indeterminate…)。格式 T<n> 绑 [T{idx}] 约定,
+      // 不用 #<n>(防与 finding seq #N 混)。finding-head 徽章簇里调,renderFinding 见下。
+      function turnBadge(turn_refs, verdict_cls) {
+        if (!turn_refs || !turn_refs.length) return '';
+        var refs = turn_refs.map(function (t) { return 'T' + t; }).join(', ');
+        return '<span class="turn-refs ' + verdict_cls + '" title="违规涉及的 turn(对应 transcript 里的 [Tn] 标记;cc/structured=全局,opencode 切片=段内)">turn: ' + escapeHtml(refs) + '</span>';
+      }
+
+      // verdict 五态 → (cls, icon, label) 一致表(汇总徽章 + 明细共用,DRY)。
+      // NA 标"不适用"并补"(场景不触发)"hint(单说"不适用"不清晰);UNRESOLVED=没判成(可重跑)、
+      // INDETERMINATE=判不准(重跑无益)。旧数据 verdict "UNCLEAR" 由后端 legacy validator 折成 UNRESOLVED。
+      var VERDICT_DISPLAY = {
+        'PASS':          { cls: 'badge-pass',          icon: '✓', label: '通过' },
+        'FAIL':          { cls: 'badge-fail',          icon: '✗', label: '失败' },
+        'N/A':           { cls: 'badge-na',            icon: '⊘', label: '不适用' },
+        'UNRESOLVED':    { cls: 'badge-unresolved',    icon: '○', label: '没判成' },
+        'INDETERMINATE': { cls: 'badge-indeterminate', icon: '?', label: '判不准' },
+      };
+
+      // UNRESOLVED cause → 短中文标签(镜像 Python error_triage.UNRESOLVED_CAUSE_INFO 的 label;
+      // suggestion 不进 JS,分布块/标签用 label 即可)。未知 cause 透传原值。纯展示,不进判决。
+      var CAUSE_LABEL = {
+        timeout: 'LLM 超时', rate_limited: '限流', connection: '连接异常',
+        cli_missing: 'CLI 缺失', auth: '认证失败', max_turns: '超过轮数上限',
+        session_not_found: 'session 丢失', parse_failed: 'LLM 输出畸形/截断',
+        unmentioned: 'LLM 未给该条结论', judge_error: '判定器异常'
+      };
+      function causeTagHtml(cause) {
+        if (!cause) return '';
+        return '<span class="src" title="没判成的根因类别(诊断,不改判定)">' + escapeHtml(CAUSE_LABEL[cause] || cause) + '</span>';
+      }
+
+      // method(判定方法)→ 标签:程序对账 / LLM。与 verdict(结果)正交:回答"怎么查的"。
+      // 旧 confidence 假浮点已废;旧数据无 method 字段时显 "—"。
+      function methodTag(m) {
+        if (m === 'PROGRAMMATIC') return '<span class="method method-prog" title="程序对账(tool_trace 命中 / 子串匹配),不调 LLM">程序</span>';
+        if (m === 'LLM') return '<span class="method method-llm" title="LLM 给出结论">LLM</span>';
+        return '<span class="method" title="未知判定方法">—</span>';
+      }
+
+      // 指令行:优先 source_excerpt(声明原文所属 bullet,含被切的主语);与 instruction_text
+      // 不同时把 instruction_text(judge 实际判定的谓语锚点)作小字附下,便于核对。纯显示,
+      // 判定只吃 instruction_text 不受影响。
+      function renderInstruction(f) {
+        var text = f.instruction_text || '';
+        var main = f.headline || f.source_excerpt || text;  // headline > excerpt > instruction_text
+        // 数量指令:指令行前挂徽章(与概要表行、CLI 的 (数量) 同一信息)——只低头读指令行
+        // 的人不抬头看 finding 头的徽章簇也能认出是控制流判官判的。
+        var qty = (f.control_flow === 'quantity') ? qtyBadge() + ' ' : '';
+        if (main.trim() !== text.trim()) {
+          return '<div class="instruction">' + qty + escapeHtml(main) + '</div>' +
+            '<div class="instruction-anchor">判定锚点:' + escapeHtml(text) + '</div>';
+        }
+        return '<div class="instruction">' + qty + escapeHtml(text) + '</div>';
+      }
+
+      // 单个 finding 的内层 HTML(finding-head + instruction + evidence + transcript)。多/单分支共用,DRY。
+      function renderFinding(f) {
+        var vd = VERDICT_DISPLAY[f.verdict] || { cls: 'badge-na', icon: '?', label: f.verdict || '?' };
+        var verdictHtml = '<span class="' + vd.cls + '" title="' + escapeHtml(f.verdict || '') + '">' + vd.icon + ' ' + escapeHtml(vd.label) + '</span>';
+        if (f.verdict === 'N/A') {
+          verdictHtml += '<span class="na-hint" title="规则存在但本次 transcript 场景不触发">(场景不触发)</span>';
+        }
+        var derived = f.derived_from_transcript ? ' <span class="derived">↺ 反推</span>' : '';
+        var seqTag = f.seq ? '<span class="seq">#' + escapeHtml(f.seq) + '</span>' : '';
+        // 来源徽章:同文去重后多来源用 " + " 连(已排序);单来源原样。sources 空则退回 source。
+        var srcs = (f.sources && f.sources.length) ? f.sources : [f.source];
+        var srcTag = '<span class="src">' + escapeHtml(srcs.join(' + ')) + '</span>';
+        // Case B 同行为跨类关联:↔ 同源 #X #Y(同一行为被抽成跨类多条,verdict 各自独立;可点跳)
+        var relLinks = (f.related || []).map(function (r) {
+          var n = escapeHtml(String(r).replace('#', ''));
+          return '<a class="ref-link" href="#finding-' + n + '">' + escapeHtml(r) + '</a>';
+        }).join('');
+        var related = relLinks ? '<span class="related">↔ 同源</span>' + relLinks : '';
+        // Case C 同源矛盾对端:⊘ 判定矛盾 #X(同一声明行被判出 PASS 与 FAIL;与 related 的
+        // 「同行为跨规则」正交——这个是「同一规则判定相反」;可点跳对端,建议人工复核)
+        var cfLinks = (f.conflict_with || []).map(function (r) {
+          var n = escapeHtml(String(r).replace('#', ''));
+          return '<a class="ref-link" href="#finding-' + n + '">' + escapeHtml(r) + '</a>';
+        }).join('');
+        var conflict = cfLinks ? '<span class="related" title="同一声明行被判出 PASS 与 FAIL,建议人工复核">⊘ 判定矛盾</span>' + cfLinks : '';
+        // FAIL 噪声判别徽章(仅 FAIL 且 noise_label 才显);放 method 前,留在徽章簇里(不跟 method 跑到右侧)
+        var noise = (f.verdict === 'FAIL' && f.noise_label) ? noiseBadge(f.noise_label, f.noise_reasons) : '';
+        // 数量判官徽章:qtyBadge(两处共用:finding 头 + 概要表行)
+        var quantity = (f.control_flow === 'quantity') ? qtyBadge() : '';
+        // turn 定位徽章(turn_refs 非空才显,即 FAIL / INDETERMINATE 违规);放噪声后、method 前,留徽章簇里
+        var turn = turnBadge(f.turn_refs, vd.cls);
+        // UNRESOLVED cause 徽章(仅没判成才显,标"为什么没判成"的根因类别);留徽章簇里。
+        var unresolvedCause = (f.verdict === 'UNRESOLVED') ? causeTagHtml(f.unresolved_cause) : '';
+        return '<div class="finding-head">' + verdictHtml +
+          seqTag +
+          '<span class="cat">' + escapeHtml(f.category || '') + '</span>' +
+          srcTag + derived + related + conflict + quantity + noise + turn + unresolvedCause +
+          methodTag(f.method) + '</div>' +
+          renderInstruction(f) +
+          '<div class="evidence">' + escapeHtml(f.evidence || '') + '</div>' +
+          '<div class="transcript">@ ' + escapeHtml(f.transcript || '') + srcBadge(f.transcript) + '</div>';
+      }
+
+      // 包一层带 verdict 边框色的 div;id=finding-<seq> 供 related 锚点跳转
+      function findingRow(f) {
+        var row = document.createElement('div');
+        row.className = 'finding ' + String(f.verdict).replace('/', '');  // "N/A"→"NA" 匹配 CSS .finding.NA(replace 去斜杠,非替下划线)
+        if (f.seq) row.id = 'finding-' + f.seq;
+        row.innerHTML = renderFinding(f);
+        return row;
+      }
+
+      var root = document.getElementById('audit-root');
+      var findings = EMBEDDED_DATA.findings || [];
+      var multi = (EMBEDDED_DATA.transcripts || []).length > 1;
+
+      // transcript 名 → 来源(cc/opencode/...);同序 zip EMBEDDED_DATA.transcripts / transcript_sources。
+      // srcBadge 给 transcript 名拼个来源徽章(无来源/旧 report → 空串,不显)。
+      var srcOf = {};
+      (EMBEDDED_DATA.transcripts || []).forEach(function (n, i) {
+        srcOf[n] = (EMBEDDED_DATA.transcript_sources || [])[i] || '';
+      });
+      function srcBadge(name) {
+        var s = srcOf[name];
+        return s ? ' <span class="src">' + escapeHtml(s) + '</span>' : '';
+      }
+
+      // ① header(skill_name + transcripts + summary 徽章 + derived 计数 + refine 砍除数)
+      var derivedCount = findings.filter(function (f) { return f.derived_from_transcript; }).length;
+      var refineDropped = EMBEDDED_DATA.refine_dropped_count || 0;
+      var s = EMBEDDED_DATA.summary || {};
+      var tu = EMBEDDED_DATA.token_usage || {};
+      root.insertAdjacentHTML('beforeend',
+        '<div class="header">' +
+          '<h1>' + escapeHtml(EMBEDDED_DATA.skill_name || '') + '</h1>' +
+          '<div class="transcripts">' + (EMBEDDED_DATA.transcripts || []).map(function (n) { return escapeHtml(n) + srcBadge(n); }).join(' · ') + '</div>' +
+          '<div class="summary">' +
+            '<span class="badge-pass">✓ 通过 ' + (s.pass || 0) + '</span>' +
+            '<span class="badge-fail">✗ 失败 ' + (s.fail || 0) + '</span>' +
+            '<span class="badge-na">⊘ 不适用 ' + (s.na || 0) + '</span>' +
+            ((s.unresolved || 0) ? '<span class="badge-unresolved" title="LLM 调用/解析失败/未提及,可重跑">○ 没判成 ' + s.unresolved + '</span>' : '') +
+            ((s.indeterminate || 0) ? '<span class="badge-indeterminate" title="LLM 看了证据但真模糊,重跑无益">? 判不准 ' + s.indeterminate + '</span>' : '') +
+            '<span>共 ' + (s.total || 0) + '</span>' +
+            (derivedCount ? ' · <span class="derived">↺ ' + derivedCount + ' 条由 transcript 反推</span>' : '') +
+            (refineDropped ? ' · <span style="color:var(--accent);" title="LLM 精筛砍掉 extractor 误抽的示例/占位伪指令">↺ refine 砍 ' + refineDropped + ' 条伪指令</span>' : '') +
+            (tu.calls ? ' · <span class="badge-tokens" title="本次 audit 所有 LLM 判定调用(refine + 条件/禁令/步骤判官 × 批)的 token 用量合计">⚙ tokens in ' + (tu.input_tokens||0) + ' / out ' + (tu.output_tokens||0) + ' · ' + tu.calls + ' calls</span>' : '') +  // cost 暂隐藏:http 路径不记,cc/http 混报误导;token 仍全记
+            (EMBEDDED_DATA.duration_seconds ? ' · <span class="badge-tokens" title="audit 墙钟(audit 头尾 perf_counter)">⏱ ' + Number(EMBEDDED_DATA.duration_seconds).toFixed(0) + 's</span>' : '') +
+          '</div>' +
+        '</div>');
+
+      // ①b 各阶段耗时/token(诊断 audit 慢在哪:extract/refine/headline/rebuild 切片/judge/postprocess;
+      // --suggest 真跑过 LLM 时 CLI 会多追加一行 suggest——它是引擎外的 CLI 层后处理)
+      var STAGE_LABEL = { extract: '抽取', refine: '精筛', headline: '标题', rebuild: '切片', judge: '判定', postprocess: '聚合', suggest: '建议' };
+      // 阶段类型:LLM(调 call_claude:refine/headline/judge/suggest)vs 程序(本地:extract/rebuild/postprocess)。
+      // 程序阶段 calls/tokens 恒 0,标出来免误读成"漏跑/合计行"。
+      var STAGE_KIND = { extract: '程序', refine: 'LLM', headline: 'LLM', rebuild: '程序', judge: 'LLM', postprocess: '程序', suggest: 'LLM' };
+      // 每阶段一句话说明(进 label 的 title hover 显):让"这阶段干啥"可诊断、不再靠猜。
+      // postprocess 是判定后的汇总阶段(跨 transcript 按指令聚合 findings + 噪声标注)→ 名字"聚合"直说。
+      var STAGE_DESC = {
+        extract: '从声明(SKILL.md / agent .md)静态正则抽全部候选指令',
+        refine: 'LLM 精筛:砍 extractor 误抽的示例/占位/描述性伪指令(per-SKILL 缓存)',
+        headline: 'LLM 把指令改写成人话标题(仅显示、判定不读;per-声明缓存)',
+        rebuild: '把 transcript 重建为 SessionDigest + 按作用域切执行段',
+        judge: 'LLM 判官逐批判定指令遵循性(条件性/禁令/步骤 + 控制流:顺序对/数量)',
+        postprocess: '判定后汇总:跨 transcript 按指令聚合 findings + 噪声判别标注',
+        suggest: '对 FAIL findings 三类归因 + 起草改进建议(--suggest 显式开启;引擎外后处理)'
+      };
+      var stages = EMBEDDED_DATA.stage_breakdown || [];
+      if (stages.length) {
+        var dur = EMBEDDED_DATA.duration_seconds || 0;
+        // suggest 在引擎墙钟之外:有它的行时 % 分母 = 引擎墙钟 + 建议耗时(否则建议行
+        // 占比会 >100%、其余行的占比也失真——% 占的是整条流水线)。
+        var sugSec = 0;
+        for (var si = 0; si < stages.length; si++) {
+          if (stages[si].stage === 'suggest') sugSec = Number(stages[si].seconds || 0);
+        }
+        if (sugSec) dur += sugSec;
+        var sumSec = 0, sumIn = 0, sumOut = 0, sumCr = 0, sumCalls = 0;
+        var stageRows = stages.map(function (s) {
+          var sec = Number(s.seconds || 0);
+          var inT = s.input_tokens || 0, outT = s.output_tokens || 0, crT = s.cache_read_input_tokens || 0;
+          sumSec += sec; sumIn += inT; sumOut += outT; sumCr += crT; sumCalls += (s.calls || 0);
+          var tok = (inT || outT) ? (inT + ' / ' + outT + (crT ? ' · cache ' + crT : '')) : '—';
+          var pct = (dur && sec) ? ' (' + Math.round(sec / dur * 100) + '%)' : '';
+          var note = s.note ? ' <span class="stage-note">(' + escapeHtml(s.note) + ')</span>' : '';
+          var kind = STAGE_KIND[s.stage] || '';
+          var kindClass = kind === 'LLM' ? 'kind-llm' : 'kind-prog';
+          var desc = STAGE_DESC[s.stage] ? ' title="' + escapeHtml(STAGE_DESC[s.stage]) + '"' : '';
+          return '<tr><td' + desc + '>' + escapeHtml(STAGE_LABEL[s.stage] || s.stage) + '</td>' +
+            '<td><span class="' + kindClass + '">' + kind + '</span></td>' +
+            '<td>' + sec.toFixed(1) + 's' + pct + '</td><td>' + tok + '</td><td>' + (s.calls || 0) + note + '</td></tr>';
+        }).join('');
+        var sumTok = (sumIn || sumOut) ? (sumIn + ' / ' + sumOut + (sumCr ? ' · cache ' + sumCr : '')) : '—';
+        var totalRow = '<tr class="stage-total"><td>合计</td><td>—</td><td>' + sumSec.toFixed(1) + 's</td><td>' + sumTok + '</td><td>' + sumCalls + '</td></tr>';
+        root.insertAdjacentHTML('beforeend',
+          '<details class="stage-breakdown" open><summary>阶段耗时 / token(诊断慢在哪)</summary>' +
+          '<table><thead><tr><th>阶段</th><th>类型</th><th>耗时(% 占总)</th><th>tokens in/out</th><th>calls</th></tr></thead>' +
+          '<tbody>' + stageRows + totalRow + '</tbody></table></details>');
+      }
+
+      // ② warnings(有才显)
+      var warns = EMBEDDED_DATA.warnings || [];
+      if (warns.length) {
+        root.insertAdjacentHTML('beforeend',
+          '<div id="audit-warnings" class="warnings"><h2>⚠️ 警告</h2><ul>' +
+          warns.map(function (x) { return '<li>' + escapeHtml(x) + '</li>'; }).join('') +
+          '</ul></div>');
+      }
+
+      // ②b UNRESOLVED 根因分布(诊断:没判成的指令从哪类失败来的;有 unresolved_breakdown 才显)
+      var ubd = EMBEDDED_DATA.unresolved_breakdown || {};
+      var ubdKeys = Object.keys(ubd);
+      if (ubdKeys.length) {
+        ubdKeys.sort(function (a, b) { return ubd[b] - ubd[a]; });  // 计数降序
+        var causeRows = ubdKeys.map(function (c) {
+          var label = CAUSE_LABEL[c] || c;
+          return '<div class="unresolved-cause"><strong>' + ubd[c] + '× ' + escapeHtml(label) + '</strong></div>';
+        }).join('');
+        root.insertAdjacentHTML('beforeend',
+          '<div class="warnings"><h2>○ 没判成根因</h2>' + causeRows + '</div>');
+      }
+
+      // ③ by_instruction 概要表:有聚合就显(单/多 transcript 都显)。fail 与 N/A 语义不同 → 两张表。
+      // 多 transcript 看跨会话 fail%/fail/total + 哪几段 fail;单 transcript 无跨会话可比,去掉
+      // fail%/fail/total/"in transcripts" 列,只留指令 + 类别(+ FAIL 的噪声判别)做概要扫描。
+      // 全无 fail → 不列违规表;全无 na → 不列不适用表。逐条详情见 ④ 明细。
+      if ((EMBEDDED_DATA.by_instruction || []).length) {
+        var byInstr = EMBEDDED_DATA.by_instruction;
+        var nTrans = EMBEDDED_DATA.transcripts.length;
+
+        var failRows = byInstr.filter(function (a) { return a.fail_count > 0; });
+        if (failRows.length) {
+          var failTitle = multi ? '违规 FAIL(跨 ' + nTrans + ' transcript)' : '违规 FAIL';
+          // 列:明细 # [,fail%] 指令 类别 [,fail/total] 噪声判别 [,fail in transcripts](方括号=多 transcript 才有)
+          var failHead = '<tr><th>明细 #</th>' + (multi ? '<th>fail%</th>' : '') +
+            '<th>指令</th><th>类别</th>' + (multi ? '<th>fail/total</th>' : '') +
+            '<th>噪声判别</th>' + (multi ? '<th>fail in transcripts</th>' : '') + '</tr>';
+          var failHtml = failRows.map(function (a) {
+            var seqs = (a.fail_seqs || []).map(function (s) {
+              return '<a class="seq-link" href="#finding-' + escapeHtml(s) + '">#' + escapeHtml(s) + '</a>';
+            }).join(', ');
+            // 噪声判别徽章(fail_count>0 行才有;无 noise_label → —)。整列让 reader 扫哪些 FAIL 是工具噪声。
+            var noise = a.noise_label ? noiseBadge(a.noise_label, a.noise_reasons) : '—';
+            // 数量行挂徽章(数量 finding 沿用原指令原文,概览表不挂记号认不出是控制流判定——
+            // 与 CLI 终端违规表的 (数量) 前缀同一信息;徽章样式与 ④ 明细 finding 头共用 qtyBadge)。
+            var qty = (a.control_flow === 'quantity') ? qtyBadge() + ' ' : '';
+            var instr = qty + escapeHtml(a.headline || a.source_excerpt || a.instruction_text || '');
+            var cat = escapeHtml(a.category || '');
+            var cells = '<td class="seq">' + seqs + '</td>';
+            if (multi) {
+              var pct = Math.round((a.fail_rate || 0) * 100);
+              var colorCls = (a.fail_rate || 0) >= 0.5 ? 'badge-fail' : 'badge-na';
+              cells += '<td class="' + colorCls + '">' + pct + '%</td>';
+            }
+            cells += '<td>' + instr + '</td><td>' + cat + '</td>';
+            if (multi) cells += '<td>' + (a.fail_count || 0) + '/' + (a.total || 0) + '</td>';
+            cells += '<td>' + noise + '</td>';
+            if (multi) cells += '<td>' + escapeHtml((a.fail_in_transcripts || []).join(', ')) + '</td>';
+            return '<tr>' + cells + '</tr>';
+          }).join('');
+          root.insertAdjacentHTML('beforeend',
+            '<div id="audit-by-instruction-fail" class="by-instruction">' +
+              '<h2>' + failTitle + '</h2>' +
+              '<table><thead>' + failHead + '</thead>' +
+              '<tbody>' + failHtml + '</tbody></table>' +
+            '</div>');
+        }
+
+        var naRows = byInstr.filter(function (a) { return a.na_count > 0; })
+          .sort(function (x, y) { return (y.na_count || 0) - (x.na_count || 0); });
+        if (naRows.length) {
+          var naTitle = multi ? '场景不适用 N/A(跨 ' + nTrans + ' transcript)' : '场景不适用 N/A';
+          // 列:明细 # [,na/total] 指令 类别 [,na in transcripts](方括号=多 transcript 才有)
+          var naHead = '<tr><th>明细 #</th>' + (multi ? '<th>na/total</th>' : '') +
+            '<th>指令</th><th>类别</th>' + (multi ? '<th>na in transcripts</th>' : '') + '</tr>';
+          var naHtml = naRows.map(function (a) {
+            var seqs = (a.na_seqs || []).map(function (s) {
+              return '<a class="seq-link" href="#finding-' + escapeHtml(s) + '">#' + escapeHtml(s) + '</a>';
+            }).join(', ');
+            var instr = escapeHtml(a.headline || a.source_excerpt || a.instruction_text || '');
+            var cat = escapeHtml(a.category || '');
+            var cells = '<td class="seq">' + seqs + '</td>';
+            if (multi) cells += '<td class="badge-na">' + (a.na_count || 0) + '/' + (a.total || 0) + '</td>';
+            cells += '<td>' + instr + '</td><td>' + cat + '</td>';
+            if (multi) cells += '<td>' + escapeHtml((a.na_in_transcripts || []).join(', ')) + '</td>';
+            return '<tr>' + cells + '</tr>';
+          }).join('');
+          root.insertAdjacentHTML('beforeend',
+            '<div id="audit-by-instruction-na" class="by-instruction">' +
+              '<h2>' + naTitle + '</h2>' +
+              '<table><thead>' + naHead + '</thead>' +
+              '<tbody>' + naHtml + '</tbody></table>' +
+            '</div>');
+        }
+      }
+
+      // ③b 声明覆盖(coverage):声明指令有多少被本次会话真实触发(反推指令不计)。
+      // covered=任一 transcript PASS/FAIL;uncovered=全 N/A(规则在、场景没触发);
+      // unknown=只有没判成/判不准。coverage_rate=covered/total(unknown 计入分母 → 诚实低估)。
+      // 单/多 transcript 同一路径(covered=任一);低覆盖 ≠ 声明差——场景没触发而已,
+      // 但意味着本报告的 FAIL 只覆盖被触达的子集。
+      var cov = EMBEDDED_DATA.coverage;
+      if (cov && cov.total) {
+        var SECTION_FALLBACK = {
+          'Root': '开头(无标题段)', 'Constraint': '约束(跨章节扫描)',
+          'Anti-Fabrication': '反捏造(跨章节扫描)', 'References': '参考文件(跨章节扫描)',
+          'transcript-derived': 'transcript 反推'
+        };
+        function sectionDisplay(s) { return s ? (SECTION_FALLBACK[s] || s) : '(未分节)'; }
+        var covPct = Math.round((cov.coverage_rate || 0) * 100);
+        var covSecHtml = (cov.sections || []).map(function (sec) {
+          // 组内只列非 covered 行(covered 是默认正常态,只计数);#N 链到 ④ 明细。
+          var items = (sec.instructions || []).filter(function (it) { return it.status !== 'covered'; });
+          var itemHtml = items.map(function (it) {
+            var seqs = (it.seqs || []).map(function (s) {
+              return '<a class="seq-link" href="#finding-' + escapeHtml(s) + '">#' + escapeHtml(s) + '</a>';
+            }).join(' ');
+            var badge = it.status === 'unknown'
+              ? '<span class="badge-unresolved" title="只有没判成/判不准,覆盖状态未知">○ 未知</span>'
+              : '<span class="badge-na" title="规则存在但所有 transcript 场景均未触发">⊘ 未覆盖</span>';
+            return '<div class="cov-item"><div class="finding-head">' + badge +
+              '<span class="seq">' + seqs + '</span>' +
+              '<span class="cat">' + escapeHtml(it.category || '') + '</span></div>' +
+              renderInstruction(it) + '</div>';
+          }).join('');
+          return '<details' + (sec.uncovered ? ' open' : '') + '><summary>' +
+            escapeHtml(sectionDisplay(sec.section)) +
+            ' · <span class="badge-pass">覆盖 ' + sec.covered + '/' + sec.total + '</span>' +
+            (sec.uncovered ? ' <span class="badge-na">未覆盖 ' + sec.uncovered + '</span>' : '') +
+            (sec.unknown ? ' <span class="badge-unresolved">未知 ' + sec.unknown + '</span>' : '') +
+            '</summary>' + (itemHtml || '<div class="all-covered">本段全覆盖</div>') + '</details>';
+        }).join('');
+        root.insertAdjacentHTML('beforeend',
+          '<div id="audit-coverage" class="findings-grouped coverage"><h2>声明覆盖(coverage)</h2>' +
+          '<div class="summary"><span>总覆盖 <strong>' + cov.covered + '/' + cov.total + '</strong> = ' + covPct + '%</span>' +
+          (cov.uncovered ? '<span class="badge-na">未覆盖 ' + cov.uncovered + '</span>' : '') +
+          (cov.unknown ? '<span class="badge-unresolved">未知 ' + cov.unknown + '</span>' : '') +
+          '</div>' + covSecHtml + '</div>');
+      }
+
+      // ③c 越界视图(boundary):轨迹里的领域工具动作 × 声明工具要求 对账。
+      // undeclared-domain ≠ 违规——声明通常不穷举工具(bash/read 本就不在声明里),
+      // 未匹配只说明"声明没写",不构成违规判定;此视图是二期行为基线的数据采集面。
+      // builtin(read/bash/grep 等原语 + non_business 白名单)不进分母。
+      var bnd = EMBEDDED_DATA.boundary;
+      if (bnd && bnd.total_tools) {
+        var rows = (bnd.tools || []).map(function (t) {
+          return '<tr>' +
+            '<td>' + escapeHtml(t.name) + '</td>' +
+            '<td>' + (t.classification === 'undeclared-domain'
+              ? '<span class="badge-na" title="内置表外且未命中声明工具要求——不构成违规判定">未声明</span>'
+              : '<span class="badge-pass" title="命中声明工具要求">已声明</span>') + '</td>' +
+            '<td class="dim">' + (t.declared_by ? escapeHtml(t.declared_by) : '—') + '</td>' +
+            '<td>' + t.sessions + '</td>' +
+            '<td>' + t.calls + '</td>' +
+            '<td class="dim">' + escapeHtml((t.transcripts || []).join(', ')) + '</td>' +
+            '</tr>';
+        }).join('');
+        root.insertAdjacentHTML('beforeend',
+          '<div id="audit-boundary" class="findings-grouped boundary"><h2>工具对账(boundary)</h2>' +
+          '<div class="summary"><span>领域工具 <strong>' + bnd.declared + '/' + bnd.total_tools + '</strong> 已在声明中' +
+          (bnd.undeclared ? ' · <span class="badge-na">未声明 ' + bnd.undeclared + ' 个</span>' : '') +
+          '</span>' +
+          (bnd.declared === 0 ? '<span class="hint">声明未列任何工具——下表"未声明"只说明声明侧没写工具要求,不是轨迹越界。</span>' : '') +
+          '<span class="hint">未声明 ≠ 违规:声明通常不穷举工具,内置原语(read/bash/grep 等)不在此列;本视图不构成违规判定。</span>' +
+          '</div>' +
+          '<table><thead><tr><th>工具</th><th>分类</th><th>声明出处</th><th>会话数</th><th>调用数</th><th>transcripts</th></tr></thead>' +
+          '<tbody>' + rows + '</tbody></table></div>');
+      }
+
+      // ④ findings:多 transcript → 按指令分组(同指令各 transcript 并排可比);
+      // 单 transcript → 按 verdict 分组(每指令仅 1 份,按结果分节更易扫"哪几条违规/不适用")
+      var ORDER = { 'FAIL': 0, 'UNRESOLVED': 1, 'INDETERMINATE': 2, 'N/A': 3, 'PASS': 4 };
+      if (multi) {
+        root.insertAdjacentHTML('beforeend',
+          '<div id="audit-findings-grouped" class="findings-grouped"><h2>明细(按指令分组)</h2></div>');
+        var gc = document.getElementById('audit-findings-grouped');
+        var grouped = {};
+        findings.forEach(function (f) {
+          var key = f.instruction_text || '(空)';
+          (grouped[key] = grouped[key] || []).push(f);
+        });
+        Object.keys(grouped).forEach(function (key) {
+          var fs = grouped[key];
+          var hasFailOrNa = fs.some(function (f) { return f.verdict !== 'PASS'; });
+          var details = document.createElement('details');
+          if (hasFailOrNa) details.setAttribute('open', '');  // FAIL/NA 组默认展开,全 PASS 折叠
+          var sum = document.createElement('summary');
+          // 组标题 headline 优先(与卡片主标题 renderInstruction 一致),回退 instruction_text
+          // (= 分组 key,即判官锚点)。同组 finding 共享 headline,取 fs[0] 即可。
+          sum.textContent = (fs[0] && fs[0].headline) || key;  // textContent 自动转义,无 XSS
+          details.appendChild(sum);
+          fs.forEach(function (f) { details.appendChild(findingRow(f)); });
+          gc.appendChild(details);
+        });
+      } else {
+        root.insertAdjacentHTML('beforeend',
+          '<div id="audit-findings" class="findings-grouped"><h2>明细(按结果分组)</h2></div>');
+        var fc = document.getElementById('audit-findings');  // M1: getElementById 而非 lastElementChild
+        var sorted = findings.slice().sort(function (a, b) {
+          return (ORDER[a.verdict] || 9) - (ORDER[b.verdict] || 9);
+        });
+        // 单 transcript:按 verdict 分组(顺序由上面 ORDER 排序保证),每组 <details> + 计数 summary,
+        // 违规/没判成/判不准/不适用 默认展开、通过折叠——让"哪几条违规/不适用"一眼可见,不必滚扁平列表找。
+        // 与 cannbot-insight AuditReportView 的 groupFindingsByVerdict 对齐。
+        var groups = {}; var order = [];
+        sorted.forEach(function (f) {
+          if (!groups[f.verdict]) { groups[f.verdict] = []; order.push(f.verdict); }
+          groups[f.verdict].push(f);
+        });
+        order.forEach(function (v) {
+          var vd = VERDICT_DISPLAY[v] || { icon: '?', label: v || '?' };
+          var det = document.createElement('details');
+          if (v !== 'PASS') det.setAttribute('open', '');
+          var sum = document.createElement('summary');
+          sum.textContent = vd.icon + ' ' + vd.label + ' (' + groups[v].length + ')';  // textContent 自动转义
+          det.appendChild(sum);
+          groups[v].forEach(function (f) { det.appendChild(findingRow(f)); });
+          fc.appendChild(det);
+        });
+      }
+
+      // ⑥ 改进建议(--suggest 产,可选视图;审计独立判决,建议仅供参考)。渲染优先级写死:
+      // skipped_reason 非空 → 只显原因行、不显 model_env 计数(失败与「全归因 model_env」
+      // 两条路都产空 suggestions,不先查 reason 会把失败误读成「没怪模型」或反之);
+      // 跑成但零归因 → 整块不渲染(正常态不渲染空视图,同 boundary/coverage 口径)。
+      var sug = EMBEDDED_DATA.suggestions;
+      if (sug && (sug.skipped_reason || (sug.suggestions || []).length || sug.model_env_count || sug.dropped_count)) {
+        if (sug.skipped_reason) {
+          root.insertAdjacentHTML('beforeend',
+            '<div id="audit-suggest" class="suggest"><h2>💡 改进建议(未生成)</h2>' +
+            '<div class="evidence">' + escapeHtml(sug.skipped_reason) + '</div></div>');
+        } else {
+          var sugGroups = { skill_fix: [], declaration_fix: [] };
+          (sug.suggestions || []).forEach(function (s) {
+            (sugGroups[s.category] || (sugGroups[s.category] = [])).push(s);
+          });
+          var sugHtml = '<div id="audit-suggest" class="suggest"><h2>💡 改进建议(--suggest 产,仅供参考)</h2>';
+          [['skill_fix', '改 skill 建议'], ['declaration_fix', '改声明建议']].forEach(function (pair) {
+            var items = sugGroups[pair[0]] || [];
+            if (!items.length) return;
+            sugHtml += '<details class="suggest-group" open><summary>' + escapeHtml(pair[1]) + ' · ' + items.length + ' 项</summary>';
+            items.forEach(function (s) {
+              var seqs = (s.target_seqs || []).map(function (q) {
+                return '<a class="seq-link" href="#finding-' + escapeHtml(q) + '">#' + escapeHtml(q) + '</a>';
+              }).join(', ');
+              var kpTitle = escapeHtml(s.keeps_pass_note || '');
+              var kp = s.keeps_pass
+                ? '<span class="badge-pass" title="' + kpTitle + '">✓ 不与 PASS 冲突</span>'
+                : '<span class="badge-fail" title="' + kpTitle + '">⚠ 未自检通过</span>';
+              sugHtml += '<div class="suggest-item">' +
+                '<div class="suggest-head">' + seqs + kp + '</div>' +
+                '<div>' + escapeHtml(s.suggestion || '') + '</div>' +
+                '<div class="evidence">归因:' + escapeHtml(s.rationale || '') + '</div>' +
+              '</div>';
+            });
+            sugHtml += '</details>';
+          });
+          if (sug.model_env_count) {
+            sugHtml += '<div class="suggest-env">' + sug.model_env_count +
+              ' 条 FAIL 归因为模型/环境问题,不出建议(透明计数,不是静默吞)</div>';
+          }
+          if (sug.dropped_count) {
+            sugHtml += '<div class="suggest-env">' + sug.dropped_count + ' 条模型输出不合规已丢弃</div>';
+          }
+          sugHtml += '</div>';
+          root.insertAdjacentHTML('beforeend', sugHtml);
+        }
+      }
+    })();
+  </script>
+</body>
+</html>

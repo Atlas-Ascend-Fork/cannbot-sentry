@@ -1,0 +1,15 @@
+# Framework defaults — override via project-level eval-config.yaml or skill-level eval-config.yaml.
+
+version: 1
+
+scanning:
+  collection_prefix: ""
+  skills_dir: "skills/"
+
+grading:
+  default_threshold: 0.7
+
+workspace:
+  default_dir: "workspace"
+  iteration_dir: "iteration-{N}"
+  eval_dir: "eval-{ID}"

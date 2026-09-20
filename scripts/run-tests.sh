@@ -1,19 +1,22 @@
 #!/usr/bin/env bash
-# CANNBot-Sentry unit test runner (insight + cpx) — 薄壳，转调各包自己的
-# （各包只跑 tests/ut；tests/e2e 真进程/浏览器/环境依赖用例按需单独跑：
-#   cd packages/<pkg> && npm run test:e2e）
+# CANNBot-Sentry unit test runner (insight + cpx + sift) — 薄壳，转调各包自己的
+# insight/cpx 只跑 tests/ut；tests/e2e 真进程/浏览器/环境依赖用例按需单独跑：
+#   cd packages/<pkg> && npm run test:e2e
+# sift 由包内 pytest 脚本决定测试范围。
 # scripts/run-tests.sh（测试知识归包：insight 管慢速用例排除，cpx 管 vitest
 # 二进制回退）。Usage:
 #   ./scripts/run-tests.sh            # auto：按改动文件选范围（默认）
 #   ./scripts/run-tests.sh auto       # 同上
 #   ./scripts/run-tests.sh insight    # 强制 insight
 #   ./scripts/run-tests.sh cpx        # 强制 cpx
+#   ./scripts/run-tests.sh sift       # 强制 sift
 #   ./scripts/run-tests.sh all        # 强制全量
 #
 # auto 判定（托底原则：判定环节永不报错；归属检查不出来就全量）：
 #   git diff <base>...HEAD（base 默认 origin/master，可用 RUN_TESTS_BASE 覆盖）
 #   + 未提交变更 → 改动只在 packages/insight 下则只跑 insight，只在
-#   packages/cpx 下则只跑 cpx；以下情况一律双跑（宁可多跑不假绿）：
+#   packages/cpx 下则只跑 cpx；packages/sift 下的变更只跑 sift。
+#   根/共享文件或无法判断范围时全量兜底；现有 insight/cpx 联动规则保留：
 #   - base 引用解析不出（浅克隆无 master / 无 git）——已提交改动无法计算
 #   - 根/共享文件（scripts/、docs/、配置…）
 #   - packages/insight/package.json（cpx 运行时借 insight 的 vitest）
@@ -37,7 +40,7 @@ detect_scope() {
   if ! command -v git >/dev/null 2>&1 \
     || ! git -C "$REPO_ROOT" rev-parse --verify -q "$base^{commit}" >/dev/null 2>&1; then
     echo "  (base '$base' not resolvable — full suite)" >&2
-    echo "both"
+    echo "insight cpx sift"
     return
   fi
   local files
@@ -47,7 +50,7 @@ detect_scope() {
   fi
   files="$files"$'\n'"$(git -C "$REPO_ROOT" status --porcelain 2>/dev/null | cut -c4-)"
 
-  local run_ins=0 run_cpx=0
+  local run_ins=0 run_cpx=0 run_sift=0
   while IFS= read -r f; do
     case "$f" in
       '') ;;
@@ -55,19 +58,20 @@ detect_scope() {
       packages/insight/*) run_ins=1 ;;
       packages/cpx/src/redactor*) run_ins=1; run_cpx=1 ;;
       packages/cpx/*) run_cpx=1 ;;
-      *) run_ins=1; run_cpx=1 ;;
+      packages/sift/*) run_sift=1 ;;
+      *) run_ins=1; run_cpx=1; run_sift=1 ;;
     esac
   done <<< "$files"
 
-  if [ "$run_ins" -eq 0 ] && [ "$run_cpx" -eq 0 ]; then
+  if [ "$run_ins" -eq 0 ] && [ "$run_cpx" -eq 0 ] && [ "$run_sift" -eq 0 ]; then
     echo "  (no changes detected vs $base — full suite)" >&2
-    echo "both"
-  elif [ "$run_ins" -eq 1 ] && [ "$run_cpx" -eq 1 ]; then
-    echo "both"
-  elif [ "$run_ins" -eq 1 ]; then
-    echo "insight"
+    echo "insight cpx sift"
   else
-    echo "cpx"
+    local selected=()
+    [ "$run_ins" -eq 1 ] && selected+=(insight)
+    [ "$run_cpx" -eq 1 ] && selected+=(cpx)
+    [ "$run_sift" -eq 1 ] && selected+=(sift)
+    echo "${selected[*]}"
   fi
 }
 
@@ -83,26 +87,22 @@ run_pkg() {
 }
 
 dispatch() {
-  local ins="$1" cpx="$2"
-  [ "$ins" -eq 1 ] && { run_pkg insight || FAILED+=(insight); }
-  [ "$cpx" -eq 1 ] && { run_pkg cpx || FAILED+=(cpx); }
+  local pkg
+  for pkg in "$@"; do
+    run_pkg "$pkg" || FAILED+=("$pkg")
+  done
 }
 
 case "$SCOPE" in
-  insight) dispatch 1 0 ;;
-  cpx)     dispatch 0 1 ;;
-  all)     dispatch 1 1 ;;
+  insight|cpx|sift) dispatch "$SCOPE" ;;
+  all) dispatch insight cpx sift ;;
   auto)
     DETECTED="$(detect_scope)"
     echo "==> scope: $DETECTED"
-    case "$DETECTED" in
-      insight) dispatch 1 0 ;;
-      cpx)     dispatch 0 1 ;;
-      *)       dispatch 1 1 ;;
-    esac
+    dispatch $DETECTED
     ;;
   *)
-    echo "Usage: $0 [auto|insight|cpx|all]" >&2
+    echo "Usage: $0 [auto|insight|cpx|sift|all]" >&2
     exit 2
     ;;
 esac

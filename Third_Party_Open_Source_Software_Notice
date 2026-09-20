@@ -1,0 +1,26 @@
+THIRD-PARTY SOFTWARE NOTICE — SIFT
+
+Scope: source incorporated into packages/sift and its declared direct dependencies.
+This notice does not claim to inventory other Sentry packages or all resolved dependencies.
+The applicable third-party licenses remain in effect for their respective components;
+the repository-level CANN OSL 2.0 notice does not replace them.
+
+Anthropic skill-creator
+Source: https://github.com/anthropics/skills/tree/main/skills/skill-creator
+Copyright 2026 Anthropic, PBC.
+License: Apache License 2.0
+Full license: packages/sift/LICENSES/Apache-2.0.txt
+Adapted files and modification descriptions: packages/sift/NOTICE.md
+Imported via guixu-labs/sift v2.6.0 (d00bcb97e85d68234c39b6e16a0aa91ae3344786).
+The exact Anthropic source revision is not recorded in the imported Sift snapshot.
+Retain this attribution, the component notice, and the full Apache license when
+redistributing these source files or derivative works.
+
+Installed Python dependencies
+Runtime: typer, rich, pydantic, PyYAML (MIT).
+Development: pytest, pytest-mock (MIT).
+These dependencies are downloaded by the package manager and are not vendored here.
+Their copyright and license texts accompany their installed distributions.
+Requirements and upstream URLs are recorded in Third_Party_Open_Source_Software_List.yaml.
+If dependencies are redistributed, retain the license texts and notices belonging
+to the actual resolved versions, including their transitive dependencies.

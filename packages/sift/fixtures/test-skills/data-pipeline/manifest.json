@@ -1,0 +1,8 @@
+{
+  "name": "data-pipeline",
+  "skills": [
+    {"path": "skills/data-validator", "depends_on": []},
+    {"path": "skills/data-transform", "depends_on": ["skills/data-validator"]},
+    {"path": "skills/report-generator", "depends_on": ["skills/data-transform"]}
+  ]
+}

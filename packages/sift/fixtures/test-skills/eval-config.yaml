@@ -1,0 +1,35 @@
+domain_templates:
+  data:
+    - name: "output is valid JSON"
+      type: "JSON_HAS_FIELD"
+      params:
+        filename: "output.json"
+        field: "status"
+    - name: "no SQL injection"
+      type: "NOT_CONTAINS"
+      params:
+        pattern: "(DROP TABLE|SELECT \\*|INSERT INTO)"
+        path: "output.json"
+
+type_templates:
+  validate:
+    - name: "report file exists"
+      type: "FILE_EXISTS"
+      params:
+        filename: "validation-report.json"
+  transform:
+    - name: "output has metadata"
+      type: "JSON_HAS_FIELD"
+      params:
+        filename: "transformed.json"
+        field: "metadata"
+  report:
+    - name: "markdown report exists"
+      type: "FILE_EXISTS"
+      params:
+        filename: "report.md"
+
+skill_keywords:
+  data-validator: ["validate", "check", "验证", "校验", "schema"]
+  data-transform: ["transform", "convert", "flatten", "nest", "转换", "迁移"]
+  report-generator: ["report", "summary", "generate report", "报告", "汇总"]
