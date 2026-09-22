@@ -2,7 +2,8 @@
 # CANNBot-Sentry unit test runner (insight + cpx + sift) — 薄壳，转调各包自己的
 # insight/cpx 只跑 tests/ut；tests/e2e 真进程/浏览器/环境依赖用例按需单独跑：
 #   cd packages/<pkg> && npm run test:e2e
-# sift 由包内 pytest 脚本决定测试范围。
+# sift 由包内 pytest 脚本决定测试范围：默认排除 e2e 标记用例（真 CLI/网络/
+# auth），SIFT_RUN_E2E=1 含入或 -m e2e 单独跑。
 # scripts/run-tests.sh（测试知识归包：insight 管慢速用例排除，cpx 管 vitest
 # 二进制回退）。Usage:
 #   ./scripts/run-tests.sh            # auto：按改动文件选范围（默认）
