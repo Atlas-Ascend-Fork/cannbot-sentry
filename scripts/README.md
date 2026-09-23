@@ -9,6 +9,8 @@
 
 脚本将在 PR 门禁流水线中自动执行，也可本地运行。随 `packages/` 各包迁入逐步补充。
 
+覆盖率收集：`./scripts/run-tests.sh [scope] --coverage`（简写 `-c`，各包内入口同样支持）。insight 走 `npm run test:cov`、cpx 在 vitest 命令追加 `--coverage`（均 v8 provider，统计各包 `src/` 全量文件，不挑目录；终端只打 text-summary 摘要，逐文件明细看各包 `coverage/` 的 lcov + html），sift 追加 `--cov=sift --cov-report=xml`（终端只打一行总覆盖率，明细看 `coverage.xml`）。等价环境变量 `COVERAGE=1` 供流水线注入；默认不收集，UT 门禁路径与耗时不变。
+
 评估和审计功能统一位于 `packages/sift`；auto 模式将该目录的变更归入 sift。
 单独运行 sift：`./scripts/run-tests.sh sift`；包内入口 `packages/sift/scripts/run-tests.sh` 也可接收 pytest 参数。
 

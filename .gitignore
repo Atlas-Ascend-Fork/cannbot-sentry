@@ -22,6 +22,7 @@ __pycache__/
 # 测试与覆盖率
 coverage/
 **/coverage/
+docs/ut-coverage-logs/
 tests/**/logs/
 tests/**/results/
 tests/**/sandboxes/

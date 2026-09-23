@@ -6,12 +6,15 @@
 # auth），SIFT_RUN_E2E=1 含入或 -m e2e 单独跑。
 # scripts/run-tests.sh（测试知识归包：insight 管慢速用例排除，cpx 管 vitest
 # 二进制回退）。Usage:
-#   ./scripts/run-tests.sh            # auto：按改动文件选范围（默认）
-#   ./scripts/run-tests.sh auto       # 同上
-#   ./scripts/run-tests.sh insight    # 强制 insight
-#   ./scripts/run-tests.sh cpx        # 强制 cpx
-#   ./scripts/run-tests.sh sift       # 强制 sift
-#   ./scripts/run-tests.sh all        # 强制全量
+#   ./scripts/run-tests.sh                    # auto：按改动文件选范围（默认）
+#   ./scripts/run-tests.sh auto               # 同上
+#   ./scripts/run-tests.sh insight            # 强制 insight
+#   ./scripts/run-tests.sh cpx                # 强制 cpx
+#   ./scripts/run-tests.sh sift               # 强制 sift
+#   ./scripts/run-tests.sh all                # 强制全量
+# 任意命令追加 --coverage（或 -c）：UT 附带覆盖率收集（insight/cpx 追加
+# vitest --coverage，sift 追加 pytest --cov=sift），报告落各包 coverage/；
+# 等价环境变量 COVERAGE=1（供流水线注入）。默认关闭，门禁路径与耗时不变。
 #
 # auto 判定（托底原则：判定环节永不报错；归属检查不出来就全量）：
 #   git diff <base>...HEAD（base 默认 origin/master，可用 RUN_TESTS_BASE 覆盖）
@@ -33,7 +36,17 @@
 set -u
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SCOPE="${1:-auto}"
+# 参数解析：scope 与 --coverage/-c 顺序不限；环境变量 COVERAGE=1 等价
+SCOPE="" COV_REQ=0
+for a in "$@"; do
+  case "$a" in
+    --coverage|-c) COV_REQ=1 ;;
+    auto|insight|cpx|sift|all) [ -z "$SCOPE" ] && SCOPE="$a" ;;
+    *) echo "Usage: $0 [auto|insight|cpx|sift|all] [--coverage|-c]" >&2; exit 2 ;;
+  esac
+done
+SCOPE="${SCOPE:-auto}"
+[ "$COV_REQ" -eq 1 ] && export COVERAGE=1
 FAILED=()
 
 detect_scope() {
@@ -101,10 +114,6 @@ case "$SCOPE" in
     DETECTED="$(detect_scope)"
     echo "==> scope: $DETECTED"
     dispatch $DETECTED
-    ;;
-  *)
-    echo "Usage: $0 [auto|insight|cpx|sift|all]" >&2
-    exit 2
     ;;
 esac
 
