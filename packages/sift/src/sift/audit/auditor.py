@@ -1211,16 +1211,18 @@ class InstructionEngine:
 
         Args:
             instructions: 已筛出的条件性指令(params 含 tool_name 或 script_path)。
-            tool_trace: ToolCallRecord 列表(支持 attr / dict 风格,见 match_tool_call)。
-            transcript_scene: 场景描述(调用方从 digest.user_turns 拼接传入)。
-            transcript_name: 该 transcript 的文件名,填进 finding.transcript。
-            model: LLM 模型名(None 走 call_claude 默认)。
-            timeout: LLM 调用超时秒数。
-            aux_tool_trace: 子代理作用域全量工具痕迹(slice.build_subagent_tool_trace,
-                仅 kind=root 时 CLI 传入;None/空 = 无旁路,行为与旧版完全一致)。
-            dispatch_returns: 该 transcript 的派发-回报对(digest.dispatch_returns,
-                audit() 主循环透传);命中记录按 ``parent_tool_use_id → dispatch_id``
-                关联到具体派发做 evidence 引用,None/对不上 → 回退无派发引用形态。
+            evidence: 单份执行记录证据(``JudgeTranscript``)。本函数读取字段:
+                name: 该 transcript 的文件名,填进 finding.transcript。
+                scene: 场景描述(调用方从 digest.user_turns 拼接传入)。
+                tool_trace: ToolCallRecord 列表(支持 attr / dict 风格,见 match_tool_call)。
+                aux_trace: 子代理作用域全量工具痕迹(slice.build_subagent_tool_trace,
+                    仅 kind=root 时 CLI 传入;None/空 = 无旁路,行为与旧版完全一致)。
+                dispatch_returns: 该 transcript 的派发-回报对(digest.dispatch_returns,
+                    audit() 主循环透传);命中记录按 ``parent_tool_use_id → dispatch_id``
+                    关联到具体派发做 evidence 引用,None/对不上 → 回退无派发引用形态。
+            call_options: 单类判官的调用配置(``JudgeCallOptions``)。本函数读取字段:
+                model: LLM 模型名(None 走 call_claude 默认)。
+                timeout: LLM 调用超时秒数。
 
         Returns:
             每条指令一个 AuditFinding,顺序与输入一致;category 全 CONDITIONAL;
@@ -1269,10 +1271,15 @@ class InstructionEngine:
 
         Args:
             instructions: 已筛出的禁令类指令(CONSTRAINT / ANTI_FABRICATION)。
-            transcript_text: 该 transcript 的执行记录文本(截断 [:8000] 防 prompt 过长)。
-            transcript_name: 该 transcript 的文件名,填进 finding.transcript。
-            model: LLM 模型名(None 走 call_claude 默认)。
-            timeout: LLM 调用超时秒数。
+            evidence: 单份执行记录证据(``JudgeTranscript``)。本函数读取字段:
+                name: 该 transcript 的文件名,填进 finding.transcript。
+                text: 该 transcript 的执行记录文本(截断 [:8000] 防 prompt 过长)。
+                aux_trace / dispatch_returns: 旁路证据 / 派发-回报对(与条件类判官
+                    同名字段作用一致)。
+            call_options: 单类判官的调用配置(``JudgeCallOptions``)。本函数读取字段:
+                model: LLM 模型名(None 走 call_claude 默认)。
+                timeout: LLM 调用超时秒数。
+                locate_turns: turn 定位开关(默认 False=关)。
 
         Returns:
             每条指令一个 AuditFinding,顺序与输入一致;category 全 PROHIBITION。
@@ -1328,10 +1335,15 @@ class InstructionEngine:
 
         Args:
             instructions: 已筛出的步骤类指令(HEADING_STEP)。
-            transcript_text: 该 transcript 的执行记录文本(截断 [:8000] 防 prompt 过长)。
-            transcript_name: 该 transcript 的文件名,填进 finding.transcript。
-            model: LLM 模型名(None 走 call_claude 默认)。
-            timeout: LLM 调用超时秒数。
+            evidence: 单份执行记录证据(``JudgeTranscript``)。本函数读取字段:
+                name: 该 transcript 的文件名,填进 finding.transcript。
+                text: 该 transcript 的执行记录文本(截断 [:8000] 防 prompt 过长)。
+                tool_trace / aux_trace / dispatch_returns: 判定证据(与条件类判官
+                    同名字段作用一致)。
+            call_options: 单类判官的调用配置(``JudgeCallOptions``)。本函数读取字段:
+                model: LLM 模型名(None 走 call_claude 默认)。
+                timeout: LLM 调用超时秒数。
+                locate_turns: turn 定位开关(默认 False=关)。
 
         Returns:
             每条指令一个 AuditFinding,顺序与输入一致;category 全 STEP。
@@ -1642,24 +1654,25 @@ class TranscriptAuditor:
             skill_name: skill 名(填进 report.skill_name)。
             skill_body: SKILL.md 正文(``InstructionExtractor.extract`` 的输入)。
             transcripts: Claude Code session JSONL 路径列表(逐个 rebuild)。
-            model: LLM 模型名(None 走 call_claude 默认)。
-            timeout: LLM 调用超时秒数。
-            locate_turns: turn 定位开关(默认 False=关)。True 时 rebuild 给 digest 加
-                ``[T{idx}]`` 前缀、禁令/步骤 judge 向 LLM 索取 ``turn_refs`` 并挂在
-                FAIL/INDETERMINATE finding 上,供能 link 到 turn 内容的下游消费方;
-                False 回到无前缀的干净判定(Task 1+2 已让 rebuild/judge 默认 False)。
-            declared_tools: 声明 frontmatter 的工具白名单(``boundary.frontmatter_tool_names``
-                产,``{lower 名: 显示文本}``),只喂越界视图对账;None = 无 frontmatter
-                声明(引擎层不读文件,由 CLI/runner 传入)。
-            aux_tool_traces: A1 旁路证据源,与 ``transcripts`` **同序**的子代理全量
-                工具痕迹列表(元素可为空列表 = 该 transcript 无旁路;None = 全部无旁路,
-                行为与旧版完全一致)。仅 ``--kind root`` 时 CLI 传入:条件类
-                (TOOL_REQUIREMENT/REFERENCE_USAGE)root trace 未命中时在对应子代理
-                痕迹里做第二遍确定性匹配,命中 → PASS(evidence 标注执行者)。
-            display_names: 与 ``transcripts`` **同序**的显示名列表。CLI 对结构化输入 /
-                ``--db`` 导出会展开成临时文件,报告里的一切名字(findings.transcript /
-                provenance 键 / transcripts / 进度)用它而非临时文件名;None / 越界时
-                回退 ``tp.name``,行为与旧版完全一致。
+            options: 一次审计的模型配置与可选处理(``AuditOptions``)。字段:
+                model: LLM 模型名(None 走 call_claude 默认)。
+                timeout: LLM 调用超时秒数。
+                locate_turns: turn 定位开关(默认 False=关)。True 时 rebuild 给 digest 加
+                    ``[T{idx}]`` 前缀、禁令/步骤 judge 向 LLM 索取 ``turn_refs`` 并挂在
+                    FAIL/INDETERMINATE finding 上,供能 link 到 turn 内容的下游消费方;
+                    False 回到无前缀的干净判定(Task 1+2 已让 rebuild/judge 默认 False)。
+                declared_tools: 声明 frontmatter 的工具白名单(``boundary.frontmatter_tool_names``
+                    产,``{lower 名: 显示文本}``),只喂越界视图对账;None = 无 frontmatter
+                    声明(引擎层不读文件,由 CLI/runner 传入)。
+                aux_tool_traces: A1 旁路证据源,与 ``transcripts`` **同序**的子代理全量
+                    工具痕迹列表(元素可为空列表 = 该 transcript 无旁路;None = 全部无旁路,
+                    行为与旧版完全一致)。仅 ``--kind root`` 时 CLI 传入:条件类
+                    (TOOL_REQUIREMENT/REFERENCE_USAGE)root trace 未命中时在对应子代理
+                    痕迹里做第二遍确定性匹配,命中 → PASS(evidence 标注执行者)。
+                display_names: 与 ``transcripts`` **同序**的显示名列表。CLI 对结构化输入 /
+                    ``--db`` 导出会展开成临时文件,报告里的一切名字(findings.transcript /
+                    provenance 键 / transcripts / 进度)用它而非临时文件名;None / 越界时
+                    回退 ``tp.name``,行为与旧版完全一致。
 
         Returns:
             ``AuditReport``:findings 为所有**有效** transcript 的平铺结果;坏/空 transcript
