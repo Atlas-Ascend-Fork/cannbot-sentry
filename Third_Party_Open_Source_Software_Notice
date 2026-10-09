@@ -1,26 +1,511 @@
-THIRD-PARTY SOFTWARE NOTICE — SIFT
+Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
+This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+CANN Open Software License Agreement Version 2.0 (the "License").
+Please refer to the License for details. You may not use this file except in compliance with the License.
+THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+See LICENSE in the root of the software repository for the full text of the License.
 
-Scope: source incorporated into packages/sift and its declared direct dependencies.
-This notice does not claim to inventory other Sentry packages or all resolved dependencies.
-The applicable third-party licenses remain in effect for their respective components;
-the repository-level CANN OSL 2.0 notice does not replace them.
+OPEN SOURCE SOFTWARE NOTICE
 
-Anthropic skill-creator
-Source: https://github.com/anthropics/skills/tree/main/skills/skill-creator
+Please note we provide an open source software notice along with this product and/or this product firmware
+(in the following just "this product"). The open source software licenses are granted by the respective
+right holders. And the open source licenses prevail all other license information with regard to the
+respective open source software contained in the product, including but not limited to End User Software
+Licensing Agreement. This notice is provided on behalf of Huawei Technologies Co. Ltd. and any of its
+local subsidiaries which may have provided this product to you in your local country.
+
+Warranty Disclaimer
+THE OPEN SOURCE SOFTWARE IN THIS PRODUCT IS DISTRIBUTED IN THE HOPE THAT IT WILL BE USEFUL,
+BUT WITHOUT ANY WARRANTY, WITHOUT EVEN THE IMPLIED WARRANTY OF MERCHANTABILITY OR FITNESS FOR
+A PARTICULAR PURPOSE. SEE THE APPLICABLE LICENSES FOR MORE DETAILS.
+
+Copyright Notice and License Texts
+
+Scope: direct dependencies of packages/insight, packages/cpx (npm) and packages/sift (Python),
+plus vendored adapted source noted above. Transitive dependencies are not enumerated here;
+they are resolved and recorded by the respective lockfiles (package-lock.json /
+installed distributions), whose license texts accompany the installed distributions.
+If dependencies are redistributed, retain the license texts and notices belonging to the
+actual resolved versions, including their transitive dependencies.
+------------------------------------------------------------------------------------------------
+Software: Anthropic skill-creator (adapted source)
+Obtained from: https://github.com/anthropics/skills/tree/main/skills/skill-creator
+Usage: prompt/report templates adapted into packages/sift (agents/*.md, reporting
+       templates); incorporated via the guixu-labs/sift v2.6.0 snapshot
+       (d00bcb97e85d68234c39b6e16a0aa91ae3344786). The exact Anthropic source
+       revision is not recorded by upstream Sift.
+Copyright notice:
 Copyright 2026 Anthropic, PBC.
 License: Apache License 2.0
-Full license: packages/sift/LICENSES/Apache-2.0.txt
+Full license text: packages/sift/LICENSES/Apache-2.0.txt
 Adapted files and modification descriptions: packages/sift/NOTICE.md
-Imported via guixu-labs/sift v2.6.0 (d00bcb97e85d68234c39b6e16a0aa91ae3344786).
-The exact Anthropic source revision is not recorded in the imported Sift snapshot.
 Retain this attribution, the component notice, and the full Apache license when
 redistributing these source files or derivative works.
 
-Installed Python dependencies
-Runtime: typer, rich, pydantic, PyYAML (MIT).
-Development: pytest, pytest-mock (MIT).
-These dependencies are downloaded by the package manager and are not vendored here.
-Their copyright and license texts accompany their installed distributions.
-Requirements and upstream URLs are recorded in Third_Party_Open_Source_Software_List.yaml.
-If dependencies are redistributed, retain the license texts and notices belonging
-to the actual resolved versions, including their transitive dependencies.
+------------------------------------------------------------------------------------------------
+Software: shadcn/ui primitives (adapted source, generated via shadcn CLI)
+Obtained from: https://ui.shadcn.com
+Usage: generated UI primitives (MIT) adapted into packages/insight/src/components/ui.
+Copyright notice:
+Copyright (c) 2023 shadcn
+License: MIT License (text below)
+
+------------------------------------------------------------------------------------------------
+Software: typer >=0.9
+Obtained from: https://github.com/fastapi/typer
+Usage: packages/sift runtime dependency (manifest: packages/sift/pyproject.toml)
+Copyright notice:
+Copyright (c) 2019 Sebastián Ramírez
+License: MIT License (text below)
+
+------------------------------------------------------------------------------------------------
+Software: rich >=13
+Obtained from: https://github.com/Textualize/rich
+Usage: packages/sift runtime dependency (manifest: packages/sift/pyproject.toml)
+Copyright notice:
+Copyright (c) 2020 Will McGugan
+License: MIT License (text below)
+
+------------------------------------------------------------------------------------------------
+Software: pydantic >=2.0
+Obtained from: https://github.com/pydantic/pydantic
+Usage: packages/sift runtime dependency (manifest: packages/sift/pyproject.toml)
+Copyright notice:
+Copyright (c) 2017 to present Pydantic Services Inc. and individual contributors.
+License: MIT License (text below)
+
+------------------------------------------------------------------------------------------------
+Software: pyyaml >=6.0
+Obtained from: https://github.com/yaml/pyyaml
+Usage: packages/sift runtime dependency (manifest: packages/sift/pyproject.toml)
+Copyright notice:
+Copyright (c) 2017-2021 Ingy döt Net; Copyright (c) 2006-2016 Kirill Simonov
+License: MIT License (text below)
+
+------------------------------------------------------------------------------------------------
+Software: pytest >=7
+Obtained from: https://github.com/pytest-dev/pytest
+Usage: packages/sift development dependency (manifest: packages/sift/pyproject.toml)
+Copyright notice:
+Copyright (c) 2004 Holger Krekel and others
+License: MIT License (text below)
+
+------------------------------------------------------------------------------------------------
+Software: pytest-mock
+Obtained from: https://github.com/pytest-dev/pytest-mock
+Usage: packages/sift development dependency (manifest: packages/sift/pyproject.toml)
+Copyright notice:
+Copyright (c) [2016] [Bruno Oliveira]
+License: MIT License (text below)
+
+------------------------------------------------------------------------------------------------
+Software: pytest-cov
+Obtained from: https://github.com/pytest-dev/pytest-cov
+Usage: packages/sift development dependency (manifest: packages/sift/pyproject.toml)
+Copyright notice:
+Copyright (c) 2010 Meme Dough
+License: MIT License (text below)
+
+------------------------------------------------------------------------------------------------
+Software: 7zip-bin ^5.2.0
+Obtained from: https://github.com/develar/7zip-bin
+Usage: direct dependency declared in packages/cpx and packages/insight/package.json (versions locked by the
+       package-lock.json of each package)
+Copyright notice:
+Copyright (c) 2016 Vladimir Krivosheev
+License: MIT
+
+------------------------------------------------------------------------------------------------
+Software: @base-ui/react ^1.5.0
+Obtained from: https://github.com/mui/base-ui
+Usage: direct dependency declared in packages/insight/package.json (versions locked by the
+       package-lock.json of each package)
+Copyright notice:
+Copyright (c) 2019 Material-UI SAS
+License: MIT
+
+------------------------------------------------------------------------------------------------
+Software: @prisma/client ^6
+Obtained from: https://github.com/prisma/prisma
+Usage: direct dependency declared in packages/insight/package.json (versions locked by the
+       package-lock.json of each package)
+Copyright notice:
+Copyright (c) Prisma Data, Inc. and Prisma contributors
+License: Apache-2.0
+
+------------------------------------------------------------------------------------------------
+Software: @tailwindcss/postcss ^4
+Obtained from: https://github.com/tailwindlabs/tailwindcss
+Usage: direct dependency declared in packages/insight/package.json (versions locked by the
+       package-lock.json of each package)
+Copyright notice:
+Copyright (c) Tailwind Labs, Inc.
+License: MIT
+
+------------------------------------------------------------------------------------------------
+Software: @types/better-sqlite3 ^7
+Obtained from: https://github.com/DefinitelyTyped/DefinitelyTyped
+Usage: direct dependency declared in packages/insight/package.json (versions locked by the
+       package-lock.json of each package)
+Copyright notice:
+Copyright (c) Microsoft Corporation.
+License: MIT
+
+------------------------------------------------------------------------------------------------
+Software: @types/node ^20
+Obtained from: https://github.com/DefinitelyTyped/DefinitelyTyped
+Usage: direct dependency declared in packages/insight/package.json (versions locked by the
+       package-lock.json of each package)
+Copyright notice:
+Copyright (c) Microsoft Corporation.
+License: MIT
+
+------------------------------------------------------------------------------------------------
+Software: @types/react ^19
+Obtained from: https://github.com/DefinitelyTyped/DefinitelyTyped
+Usage: direct dependency declared in packages/insight/package.json (versions locked by the
+       package-lock.json of each package)
+Copyright notice:
+Copyright (c) Microsoft Corporation.
+License: MIT
+
+------------------------------------------------------------------------------------------------
+Software: @types/react-dom ^19
+Obtained from: https://github.com/DefinitelyTyped/DefinitelyTyped
+Usage: direct dependency declared in packages/insight/package.json (versions locked by the
+       package-lock.json of each package)
+Copyright notice:
+Copyright (c) Microsoft Corporation.
+License: MIT
+
+------------------------------------------------------------------------------------------------
+Software: @vitejs/plugin-react ^4
+Obtained from: https://github.com/vitejs/vite-plugin-react
+Usage: direct dependency declared in packages/insight/package.json (versions locked by the
+       package-lock.json of each package)
+Copyright notice:
+Copyright (c) 2019-present, Yuxi (Evan) You and Vite contributors
+License: MIT
+
+------------------------------------------------------------------------------------------------
+Software: @vitest/coverage-v8 ^3.2.7
+Obtained from: https://github.com/vitest-dev/vitest
+Usage: direct dependency declared in packages/cpx and packages/insight/package.json (versions locked by the
+       package-lock.json of each package)
+Copyright notice:
+Copyright (c) 2021-Present Vitest Team
+License: MIT
+
+------------------------------------------------------------------------------------------------
+Software: @vitest/ui ^3.2.7
+Obtained from: https://github.com/vitest-dev/vitest
+Usage: direct dependency declared in packages/insight/package.json (versions locked by the
+       package-lock.json of each package)
+Copyright notice:
+Copyright (c) 2021-Present Vitest Team
+License: MIT
+
+------------------------------------------------------------------------------------------------
+Software: better-sqlite3 ^13.0.3
+Obtained from: https://github.com/WiseLibs/better-sqlite3
+Usage: direct dependency declared in packages/insight/package.json (versions locked by the
+       package-lock.json of each package)
+Copyright notice:
+Copyright (c) 2017 Joshua Wise
+License: MIT
+
+------------------------------------------------------------------------------------------------
+Software: chalk ^5.6.2
+Obtained from: https://github.com/chalk/chalk
+Usage: direct dependency declared in packages/insight/package.json (versions locked by the
+       package-lock.json of each package)
+Copyright notice:
+Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
+License: MIT
+
+------------------------------------------------------------------------------------------------
+Software: class-variance-authority ^0.7.1
+Obtained from: https://github.com/joe-bell/cva
+Usage: direct dependency declared in packages/insight/package.json (versions locked by the
+       package-lock.json of each package)
+Copyright notice:
+Copyright (c) 2023 Joe Bell
+License: Apache-2.0
+
+------------------------------------------------------------------------------------------------
+Software: cli-truncate ^6.0.0
+Obtained from: https://github.com/sindresorhus/cli-truncate
+Usage: direct dependency declared in packages/insight/package.json (versions locked by the
+       package-lock.json of each package)
+Copyright notice:
+Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
+License: MIT
+
+------------------------------------------------------------------------------------------------
+Software: clsx ^2.1.1
+Obtained from: https://github.com/lukeed/clsx
+Usage: direct dependency declared in packages/insight/package.json (versions locked by the
+       package-lock.json of each package)
+Copyright notice:
+Copyright (c) Luke Edwards <luke.edwards05@gmail.com> (lukeed.com)
+License: MIT
+
+------------------------------------------------------------------------------------------------
+Software: commander ^15.0.0
+Obtained from: https://github.com/tj/commander.js
+Usage: direct dependency declared in packages/insight/package.json (versions locked by the
+       package-lock.json of each package)
+Copyright notice:
+Copyright (c) 2011 TJ Holowaychuk <tj@vision-media.ca>
+License: MIT
+
+------------------------------------------------------------------------------------------------
+Software: esbuild ^0.25.0
+Obtained from: https://github.com/evanw/esbuild
+Usage: direct dependency declared in packages/insight/package.json (versions locked by the
+       package-lock.json of each package)
+Copyright notice:
+Copyright (c) 2020 Evan Wallace
+License: MIT
+
+------------------------------------------------------------------------------------------------
+Software: eslint ^9
+Obtained from: https://github.com/eslint/eslint
+Usage: direct dependency declared in packages/insight/package.json (versions locked by the
+       package-lock.json of each package)
+Copyright notice:
+Copyright OpenJS Foundation and other contributors, <www.openjsf.org>
+License: MIT
+
+------------------------------------------------------------------------------------------------
+Software: eslint-config-next 16.2.9
+Obtained from: https://github.com/vercel/next.js
+Usage: direct dependency declared in packages/insight/package.json (versions locked by the
+       package-lock.json of each package)
+Copyright notice:
+See the package license file in the installed distribution
+License: MIT
+
+------------------------------------------------------------------------------------------------
+Software: fzstd ^0.1.1
+Obtained from: https://github.com/101arrowz/fzstd
+Usage: direct dependency declared in packages/cpx/package.json (versions locked by the
+       package-lock.json of each package)
+Copyright notice:
+Copyright (c) 2020 Arjun Barrett
+License: MIT
+
+------------------------------------------------------------------------------------------------
+Software: happy-dom ^20.10.6
+Obtained from: https://github.com/capricorn86/happy-dom
+Usage: direct dependency declared in packages/insight/package.json (versions locked by the
+       package-lock.json of each package)
+Copyright notice:
+Copyright (c) 2019 David Ortner (capricorn86)
+License: MIT
+
+------------------------------------------------------------------------------------------------
+Software: ink ^7.0.6
+Obtained from: https://github.com/vadimdemedes/ink
+Usage: direct dependency declared in packages/insight/package.json (versions locked by the
+       package-lock.json of each package)
+Copyright notice:
+Copyright (c) Vadym Demedes <vadimdemedes@hey.com> (https://github.com/vadimdemedes)
+License: MIT
+
+------------------------------------------------------------------------------------------------
+Software: ink-testing-library ^4.0.0
+Obtained from: https://github.com/vadimdemedes/ink-testing-library
+Usage: direct dependency declared in packages/insight/package.json (versions locked by the
+       package-lock.json of each package)
+Copyright notice:
+Copyright (c) Vadym Demedes <vadimdemedes@hey.com> (github.com/vadimdemedes/ink-testing-library)
+License: MIT
+
+------------------------------------------------------------------------------------------------
+Software: lucide-react ^1.18.0
+Obtained from: https://github.com/lucide-icons/lucide
+Usage: direct dependency declared in packages/insight/package.json (versions locked by the
+       package-lock.json of each package)
+Copyright notice:
+Copyright (c) 2026 Lucide Icons and Contributors
+License: ISC
+
+------------------------------------------------------------------------------------------------
+Software: next 16.2.9
+Obtained from: https://github.com/vercel/next.js
+Usage: direct dependency declared in packages/insight/package.json (versions locked by the
+       package-lock.json of each package)
+Copyright notice:
+Copyright (c) 2025 Vercel, Inc.
+License: MIT
+
+------------------------------------------------------------------------------------------------
+Software: prisma ^6
+Obtained from: https://github.com/prisma/prisma
+Usage: direct dependency declared in packages/insight/package.json (versions locked by the
+       package-lock.json of each package)
+Copyright notice:
+Copyright (c) Prisma Data, Inc. and Prisma contributors
+License: Apache-2.0
+
+------------------------------------------------------------------------------------------------
+Software: react 19.2.4
+Obtained from: https://github.com/facebook/react
+Usage: direct dependency declared in packages/insight/package.json (versions locked by the
+       package-lock.json of each package)
+Copyright notice:
+Copyright (c) Meta Platforms, Inc. and affiliates.
+License: MIT
+
+------------------------------------------------------------------------------------------------
+Software: react-dom 19.2.4
+Obtained from: https://github.com/facebook/react
+Usage: direct dependency declared in packages/insight/package.json (versions locked by the
+       package-lock.json of each package)
+Copyright notice:
+Copyright (c) Meta Platforms, Inc. and affiliates.
+License: MIT
+
+------------------------------------------------------------------------------------------------
+Software: shadcn ^4.11.0
+Obtained from: https://github.com/shadcn-ui/ui
+Usage: direct dependency declared in packages/insight/package.json (versions locked by the
+       package-lock.json of each package)
+Copyright notice:
+Copyright (c) 2023 shadcn
+License: MIT
+
+------------------------------------------------------------------------------------------------
+Software: sonner ^2.0.7
+Obtained from: https://github.com/emilkowalski/sonner
+Usage: direct dependency declared in packages/insight/package.json (versions locked by the
+       package-lock.json of each package)
+Copyright notice:
+Copyright (c) 2023 Emil Kowalski
+License: MIT
+
+------------------------------------------------------------------------------------------------
+Software: string-width ^8.2.1
+Obtained from: https://github.com/sindresorhus/string-width
+Usage: direct dependency declared in packages/insight/package.json (versions locked by the
+       package-lock.json of each package)
+Copyright notice:
+Copyright (c) Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)
+License: MIT
+
+------------------------------------------------------------------------------------------------
+Software: tailwind-merge ^3.6.0
+Obtained from: https://github.com/dcastil/tailwind-merge
+Usage: direct dependency declared in packages/insight/package.json (versions locked by the
+       package-lock.json of each package)
+Copyright notice:
+Copyright (c) 2021 Dany Castillo
+License: MIT
+
+------------------------------------------------------------------------------------------------
+Software: tailwindcss ^4
+Obtained from: https://github.com/tailwindlabs/tailwindcss
+Usage: direct dependency declared in packages/insight/package.json (versions locked by the
+       package-lock.json of each package)
+Copyright notice:
+Copyright (c) Tailwind Labs, Inc.
+License: MIT
+
+------------------------------------------------------------------------------------------------
+Software: tsx ^4.22.4
+Obtained from: https://github.com/privatenumber/tsx
+Usage: direct dependency declared in packages/cpx and packages/insight/package.json (versions locked by the
+       package-lock.json of each package)
+Copyright notice:
+Copyright (c) Hiroki Osame <hiroki.osame@gmail.com>
+License: MIT
+
+------------------------------------------------------------------------------------------------
+Software: tw-animate-css ^1.4.0
+Obtained from: https://github.com/Wombosvideo/tw-animate-css
+Usage: direct dependency declared in packages/insight/package.json (versions locked by the
+       package-lock.json of each package)
+Copyright notice:
+Copyright (c) 2025 Wombosvideo
+License: MIT
+
+------------------------------------------------------------------------------------------------
+Software: typescript ^5
+Obtained from: https://github.com/microsoft/TypeScript
+Usage: direct dependency declared in packages/insight/package.json (versions locked by the
+       package-lock.json of each package)
+Copyright notice:
+Copyright (c) Microsoft Corporation
+License: Apache-2.0
+
+------------------------------------------------------------------------------------------------
+Software: undici ^6.28.0
+Obtained from: https://github.com/nodejs/undici
+Usage: direct dependency declared in packages/cpx/package.json (versions locked by the
+       package-lock.json of each package)
+Copyright notice:
+Copyright (c) Matteo Collina and Undici contributors
+License: MIT
+
+------------------------------------------------------------------------------------------------
+Software: vitest ^3
+Obtained from: https://github.com/vitest-dev/vitest
+Usage: direct dependency declared in packages/insight/package.json (versions locked by the
+       package-lock.json of each package)
+Copyright notice:
+Copyright (c) 2021-Present Vitest Team
+License: MIT
+
+------------------------------------------------------------------------------------------------
+License texts
+
+MIT License (applies to components marked "MIT License" above)
+
+MIT License
+
+Copyright (c) the respective copyright holders listed above
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+------------------------------------------------------------------------------------------------
+
+ISC License (applies to components marked "ISC" above)
+
+ISC License
+
+Copyright (c) the respective copyright holders listed above
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES WITH
+REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF MERCHANTABILITY
+AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY SPECIAL, DIRECT,
+INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES WHATSOEVER RESULTING FROM
+LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION OF CONTRACT, NEGLIGENCE OR
+OTHER TORTIOUS ACTION, ARISING OUT OF OR IN CONNECTION WITH THE USE OR
+PERFORMANCE OF THIS SOFTWARE.
+
+------------------------------------------------------------------------------------------------
+
+Apache License 2.0 (applies to components marked "Apache-2.0" above):
+the full text is distributed with this repository at packages/sift/LICENSES/Apache-2.0.txt.

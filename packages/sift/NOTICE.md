@@ -22,5 +22,4 @@ Sentry 中的 Sift 原创部分遵循仓库根目录的 [CANN OSL 2.0](../../LIC
 文件中的 CANN 声明仅适用于 Sift 的原创增加部分。
 
 本文中的路径均相对于 `packages/sift/`；原文件注释中的“根目录 NOTICE.md”指本包目录。
-第三方登记见仓库根目录的 `Third_Party_Open_Source_Software_List.yaml` 和
-`Third_Party_Open_Source_Software_Notice`。
+第三方登记见仓库根目录的 `Third_Party_Open_Source_Software_Notice`。

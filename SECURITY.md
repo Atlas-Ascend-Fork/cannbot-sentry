@@ -26,7 +26,7 @@ CANNBot-Sentry 是旁路观测 · 审计 · 评测工具，安全边界遵循以
 | 4 | `https://gitcode.com/cann/cannbot-sentry/issues` | 问题反馈 | README.md / CONTRIBUTING.md |
 | 5 | `https://img.shields.io` | README 徽章图 | README.md / README-zh.md |
 
-> 注：三方依赖的上游社区地址统一在 `Third_Party_Open_Source_Software_List.yaml` 中登记，不在此表重复维护。
+> 注：三方依赖的上游社区地址统一在 `Third_Party_Open_Source_Software_Notice` 中登记，不在此表重复维护。
 
 ## 三、文件权限参考
 

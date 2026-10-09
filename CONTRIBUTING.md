@@ -65,7 +65,7 @@
 
 - 一个 PR 只做一件事；PR 标题遵循 `type(scope): summary`（如 `feat(insight): ...`、`fix(cpx): ...`、`docs: ...`）
 - PR 需包含：变更说明、测试方式、必要的截图或导出证据
-- 新增依赖必须在 `Third_Party_Open_Source_Software_List.yaml` 与 `Third_Party_Open_Source_Software_Notice` 中登记（License 须与 CANN OSL 2.0 兼容）
+- 新增依赖必须在 `Third_Party_Open_Source_Software_Notice` 中登记（License 须与 CANN OSL 2.0 兼容）
 - 所有源文件须携带 CANN OSL 2.0 许可证头（见 `scripts/` 许可证门禁脚本）
 - 合入需 2 位 Committer 审批（1 位 LGTM + 1 位 Approve）
 
