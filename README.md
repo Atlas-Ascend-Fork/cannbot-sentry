@@ -25,6 +25,8 @@ While agents run on the field, Sentry stands on the sideline: **recording what h
 
 **Principles**: non-intrusive — never modifies agent workflows or opencode / Claude Code themselves; local-first — reads local session records only, data never leaves your machine.
 
+**Multi-user ready**: several engineers on one server can each run an isolated instance — per-user fixed port, data/credentials isolated by HOME, capture auto-import never crosses users (`packages/insight/docs/multi-user-server.md`).
+
 ## Source Download
 
 ```bash

@@ -25,6 +25,8 @@ Agent 在场上跑，Sentry 在场边：**记录现场 · 复盘事实 · 评鉴
 
 **原则**：零侵入 —— 不改 Agent 工作流、不改 opencode / Claude Code，能力叠加其上；本地优先 —— 只读取本地会话记录，数据不出域。
 
+**多人就绪**：一台服务器多人可各自运行隔离实例——每人固定端口、数据与凭据随 HOME 隔离、捕获自动导入绝不串人（`packages/insight/docs/multi-user-server.md`）。
+
 ## 源码下载
 
 ```bash
