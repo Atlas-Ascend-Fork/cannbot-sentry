@@ -290,8 +290,8 @@ License: MIT
 ------------------------------------------------------------------------------------------------
 Software: fzstd ^0.1.1
 Obtained from: https://github.com/101arrowz/fzstd
-Usage: direct dependency declared in packages/cpx/package.json (versions locked by the
-       package-lock.json of each package)
+Usage: direct dependency declared in packages/cpx/package.json and packages/insight/package.json
+       (versions locked by the package-lock.json of each package)
 Copyright notice:
 Copyright (c) 2020 Arjun Barrett
 License: MIT
