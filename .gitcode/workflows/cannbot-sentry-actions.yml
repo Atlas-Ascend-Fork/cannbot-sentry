@@ -63,7 +63,19 @@ stages:
     pre:
     - type: auto
     fail-fast: false
-  
+  stage3:
+    name: UT
+    jobs:
+      JOB_UT_Test:
+        name: UT_Test
+        uses: .gitcode/workflows/ut_action.yml
+        with:
+          ut_type: 'ophost'
+          ut_package: 'coverage_*.info'
+          image_version: ${{ jobs.JOB_image.outputs.UT_Test }}
+    pre:
+    - type: auto
+    fail-fast: true
 
 post:
   jobs: 
