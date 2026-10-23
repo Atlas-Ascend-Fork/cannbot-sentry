@@ -39,11 +39,11 @@ cd cannbot-sentry
 **npm (no source clone)** — published packages install straight from the public npm registry:
 
 ```bash
-npm install -g cannbot-insight   # insight Web UI (cannbot-insight / cbi)
-npm install -g cannbot-proxy     # cpx capture proxy (cpx)
-# Same tools under the Context brand (session data fully interops):
 npm install -g context-insight   # insight Web UI (context-insight / ctxi)
 npm install -g context-cpx       # cpx capture proxy (cpx)
+# Same tools under the CANNBot brand (session data fully interops):
+npm install -g cannbot-insight   # insight Web UI (cannbot-insight / cbi)
+npm install -g cannbot-proxy     # cpx capture proxy (cpx)
 ```
 
 Shell tab completion is configured automatically on install (bash/zsh); open a new terminal and `cpx <TAB>` just works.

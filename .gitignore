@@ -36,6 +36,8 @@ captures/
 *.tgz
 .context-pack/
 **/.context-pack/
+.cannbot-pack/
+**/.cannbot-pack/
 
 # IDE 与系统文件
 .idea/

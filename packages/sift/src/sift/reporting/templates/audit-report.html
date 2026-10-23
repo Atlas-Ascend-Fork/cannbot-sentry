@@ -585,7 +585,7 @@
         });
         // 单 transcript:按 verdict 分组(顺序由上面 ORDER 排序保证),每组 <details> + 计数 summary,
         // 违规/没判成/判不准/不适用 默认展开、通过折叠——让"哪几条违规/不适用"一眼可见,不必滚扁平列表找。
-        // 与 cannbot-insight AuditReportView 的 groupFindingsByVerdict 对齐。
+        // 与 context-insight AuditReportView 的 groupFindingsByVerdict 对齐。
         var groups = {}; var order = [];
         sorted.forEach(function (f) {
           if (!groups[f.verdict]) { groups[f.verdict] = []; order.push(f.verdict); }

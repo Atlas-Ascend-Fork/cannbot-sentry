@@ -227,7 +227,7 @@ class TestInstructionExtractor:
     @staticmethod
     def test_reference_usage_category_collapse():
         """路由型 skill 的类别级 references/<X>(无扩展名)是互斥备选 → 合并成一条;
-        否则 N 类里 N-1 个不适用的算成假 FAIL(ascendc-tiling-design 曾 1/7 假红灯)。
+        否则 N 类里 N-1 个不适用的算成假 FAIL(acme-tiling-design 曾 1/7 假红灯)。
         """
         ext = InstructionExtractor()
         body = (
@@ -414,7 +414,7 @@ class TestInstructionExtractorChinese:
     def test_tool_requirement_cn_rejects_chinese_compound():
         """中文「运行时/运行中/运行失败」不是工具调用——「运行」是「运行时(runtime)」
         等词的一部分。旧 \\w+ 在 Unicode 下匹配汉字,把「运行时依赖基线」抽成
-        tool_name='时依赖基线'(假阳性;ascendc-env-check 实测 6 条里 5 条垃圾)。
+        tool_name='时依赖基线'(假阳性;acme-env-check 实测 6 条里 5 条垃圾)。
         设计本意(L83 注释)就是不抽中文工具名——要求工具名 ASCII 开头对齐该意图。
         """
         ext = InstructionExtractor()

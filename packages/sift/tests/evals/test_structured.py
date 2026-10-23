@@ -33,8 +33,8 @@ FRIENDLY = {
             "tool_calls": [
                 {
                     "name": "skill",
-                    "input": {"name": "ascendc-crash-debug"},
-                    "result": '<skill_content name="ascendc-crash-debug">BODY</skill_content>',
+                    "input": {"name": "acme-crash-debug"},
+                    "result": '<skill_content name="acme-crash-debug">BODY</skill_content>',
                 },
                 {"name": "read", "input": {"file_path": "src/x.py"}, "result": "1\timport os\n2\tcrash()"},
             ],
@@ -59,7 +59,7 @@ def test_skill_tool_call_normalized_to_skill(tmp_path):
     assert "Skill" in names  # skill → Skill
     assert "Read" in names  # read → Read(大写,cc digest 分支认)
     skill_use = next(u for u in _uses(recs) if u["name"] == "Skill")
-    assert skill_use["input"]["skill"] == "ascendc-crash-debug"  # input.name → input.skill
+    assert skill_use["input"]["skill"] == "acme-crash-debug"  # input.name → input.skill
 
 
 def test_tool_results_emitted_as_user_record_with_matching_ids(tmp_path):
@@ -75,7 +75,7 @@ def test_tool_results_emitted_as_user_record_with_matching_ids(tmp_path):
 def test_digest_from_structured_records(tmp_path):
     recs = load_structured_records(_write(tmp_path, FRIENDLY))
     digest = _digest_from_records(recs)
-    assert digest.skill_used == "ascendc-crash-debug"
+    assert digest.skill_used == "acme-crash-debug"
     trace_names = [t.name for t in digest.tool_trace]
     assert "Skill" in trace_names and "Read" in trace_names
     # read 结果回流(build_digest 会把路径按公共根相对化,故验内容不验原路径)
@@ -98,14 +98,14 @@ def test_digest_from_structured_records_without_result(tmp_path):
                 "parent_tool_use_id": None,
                 "text": "调用 skill 排查",
                 "tool_calls": [
-                    {"name": "skill", "input": {"name": "ascendc-crash-debug"}},
+                    {"name": "skill", "input": {"name": "acme-crash-debug"}},
                     {"name": "read", "input": {"file_path": "src/x.py"}},
                 ],
             },
         ],
     }
     digest = _digest_from_records(load_structured_records(_write(tmp_path, no_result)))
-    assert digest.skill_used == "ascendc-crash-debug"  # scene / by-skill 分段用
+    assert digest.skill_used == "acme-crash-debug"  # scene / by-skill 分段用
     assert [t.name for t in digest.tool_trace] == ["Skill", "Read"]  # tool_trace 用
     assert [f.path for f in digest.input_files] == ["x.py"]  # derive_declarations 读 path
     assert all(f.content == "" for f in digest.input_files)  # 内容空(无 result),audit 不读
@@ -117,7 +117,7 @@ def test_slice_finds_skill_segment(tmp_path):
     recs = load_structured_records(_write(tmp_path, FRIENDLY))
     jsonl = tmp_path / "expanded.jsonl"
     jsonl.write_text("\n".join(json.dumps(r, ensure_ascii=False) for r in recs), encoding="utf-8")
-    segs = slice_transcript(jsonl, "ascendc-crash-debug", "skill")
+    segs = slice_transcript(jsonl, "acme-crash-debug", "skill")
     assert len(segs) >= 1  # skill 被调用过 → 切得出段
 
 

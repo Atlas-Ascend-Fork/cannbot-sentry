@@ -889,7 +889,7 @@ def test_http_call_missing_tooluse_raises_typed(monkeypatch):
 
 
 def test_http_call_uses_settings_creds_when_env_missing(monkeypatch, tmp_path):
-    """os.environ 无凭据(如 cannbot-insight next dev 子进程)→ 回退 ~/.claude/settings.json
+    """os.environ 无凭据(如 context-insight next dev 子进程)→ 回退 ~/.claude/settings.json
     的 token/base,请求 Authorization / 端点用 config 值(与 cc 同源 → cc 能跑它就能跑)。
     """
     import json as _j

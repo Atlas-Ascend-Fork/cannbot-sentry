@@ -24,7 +24,7 @@
 #   - base 引用解析不出（浅克隆无 master / 无 git）——已提交改动无法计算
 #   - 根/共享文件（scripts/、docs/、配置…）
 #   - packages/insight/package.json（cpx 运行时借 insight 的 vitest）
-#   - packages/cpx/src/redactor*（insight 的 cannbay2 测试直接 import 它）
+#   - packages/cpx/src/redactor*（insight 的 lake 测试直接 import 它）
 #
 # Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
 # This program is free software, you can redistribute it and/or modify it under the terms and conditions of

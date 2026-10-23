@@ -39,11 +39,11 @@ cd cannbot-sentry
 **npm（免克隆源码）**——已发布到公共 npm registry，一条命令安装：
 
 ```bash
-npm install -g cannbot-insight   # insight 观测平台（cannbot-insight / cbi）
-npm install -g cannbot-proxy     # cpx 捕获代理（cpx）
-# Context 品牌同款（会话数据完全互通）：
 npm install -g context-insight   # insight 观测平台（context-insight / ctxi）
 npm install -g context-cpx       # cpx 捕获代理（cpx）
+# CANNBot 品牌同款（会话数据完全互通）：
+npm install -g cannbot-insight   # insight 观测平台（cannbot-insight / cbi）
+npm install -g cannbot-proxy     # cpx 捕获代理（cpx）
 ```
 
 Tab 补全在安装时自动装配（bash/zsh），新开终端 `cpx <TAB>` 即可用。
