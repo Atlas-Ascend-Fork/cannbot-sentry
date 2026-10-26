@@ -441,7 +441,7 @@ Copyright (c) Microsoft Corporation
 License: Apache-2.0
 
 ------------------------------------------------------------------------------------------------
-Software: undici ^6.28.1
+Software: undici ^6.29.1
 Obtained from: https://github.com/nodejs/undici
 Usage: direct dependency declared in packages/cpx/package.json (versions locked by the
        package-lock.json of each package)
