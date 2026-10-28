@@ -19,7 +19,7 @@ Agent 在场上跑，Sentry 在场边：**记录现场 · 复盘事实 · 评鉴
 | 能力 | 回答的问题 | 亮点 |
 |------|-----------|------|
 | **观测 Observe**（packages/insight） | 运行中发生了什么？ | 全量画像：Token · 成本 · 上下文；Turn / Tool / Skill 可回放时间线；按时间戳重建文件现场（取证） |
-| **捕获 Capture**（packages/cpx） | 线上到底传了什么？ | 网关旁路捕获全量上下文请求/响应；API Key 永不落盘（唯一落盘咽喉统一打码） |
+| **捕获 Capture**（packages/cpx） | 线上到底传了什么？ | 网关旁路捕获全量上下文请求/响应；API Key 永不落盘（唯一落盘入口统一打码） |
 | **审计 Audit**（packages/sift） | 有没有按声明做？ | 双重校验：流程合规 + 结果一致；执行 vs 声明（Skill · Agent · Workflow）对账，证据回链 |
 | **评测 Evaluate**（packages/sift） | 做得好不好？ | 静态：分析 + 安全审查（规则驱动）；动态：A/B —— 有无 Skill · 版本对比；判决报告 + CI 门禁 |
 
