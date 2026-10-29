@@ -25,7 +25,7 @@ Agent 在场上跑，Sentry 在场边：**记录现场 · 复盘事实 · 评鉴
 
 **原则**：零侵入 —— 不改 Agent 工作流、不改 opencode / Claude Code，能力叠加其上；本地优先 —— 只读取本地会话记录，数据不出域。
 
-**多人就绪**：一台服务器多人可各自运行隔离实例——每人固定端口、数据与凭据随 HOME 隔离、捕获自动导入绝不串人（`packages/insight/docs/multi-user-server.md`）。
+**多人就绪**：一台服务器多人可各自运行隔离实例——每人固定端口、数据与凭据随 HOME 隔离、捕获自动导入绝不串人。
 
 ## 源码下载
 
@@ -71,7 +71,7 @@ cannbot-sentry/
 ├── OAT.xml / .gitignore       # 合规扫描 · 忽略规则
 ├── install.sh                 # 统一安装：单包 / 组合 / all
 ├── scripts/                   # 治理脚本（许可证门禁等）
-├── docs/                      # 跨包文档（架构 · 安装）
+├── docs/                      # 跨包文档（仓群结构图 · pre-commit 指南）
 └── packages/
     ├── insight/               # 会话洞察 · 观测
     ├── cpx/                   # 网关 · 流量捕获
