@@ -12,7 +12,7 @@ CANNBot 是 [CANN](https://hiascend.com/software/cann) 社区的 Infra 智能体
 
 Agent 在场上跑，Sentry 在场边：**记录现场 · 复盘事实 · 评鉴质量**。
 
-> 仓库状态：`packages/insight` 与 `packages/cpx` 已迁入落地（并已发布 npm）；`packages/sift`（审计 / 评测）规划中、待迁入，详见[目录结构](#目录结构)。
+> 仓库状态：`packages/insight`、`packages/cpx` 与 `packages/sift` 均已迁入；insight 与 cpx 已发布 npm。各包源码安装要求见对应 README。
 
 ## 核心能力
 
@@ -56,7 +56,7 @@ Tab 补全在安装时自动装配（bash/zsh），新开终端 `cpx <TAB>` 即�
 ./install.sh all       # 全量安装
 ```
 
-> insight 与 cpx 现已可安装；sift 待迁入暂为占位。各包前置要求见其 README。
+> insight、cpx 与 sift 均已迁入仓库；insight 与 cpx 可从 npm 安装。各包源码安装要求见其 README。
 
 ## 目录结构
 

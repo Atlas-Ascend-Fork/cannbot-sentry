@@ -12,7 +12,7 @@ This repo (cannbot-sentry) is its observability repo, providing **Observation ·
 
 While agents run on the field, Sentry stands on the sideline: **recording what happened, replaying the facts, and judging the quality**.
 
-> Status: `packages/insight` and `packages/cpx` have landed and are published on npm; `packages/sift` (Audit / Evaluate) is planned and not yet migrated. See [Directory Structure](#directory-structure).
+> Status: `packages/insight`, `packages/cpx`, and `packages/sift` have landed; insight and cpx are published on npm. See each package's README for per-package requirements.
 
 ## Core Capabilities
 
@@ -56,7 +56,7 @@ Shell tab completion is configured automatically on install (bash/zsh); open a n
 ./install.sh all       # everything
 ```
 
-> `insight` and `cpx` are installable now; `sift` stays a placeholder until it lands. See each package's README for per-package requirements.
+> `insight`, `cpx`, and `sift` have landed in the repository; insight and cpx are installable from npm. See each package's README for per-package requirements.
 
 ## Directory Structure
 

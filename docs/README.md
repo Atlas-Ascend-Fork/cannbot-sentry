@@ -9,7 +9,7 @@
 | 架构设计 | Monorepo 一仓一包架构、包间运行时契约、零侵入原则 | 规划中 |
 | 安装指南 | 统一安装（单包 / 组合 / all）与各包前置要求 | 规划中 |
 
-> `packages/insight` 与 `packages/cpx` 已从 [cannbot-skills](https://gitcode.com/cann/cannbot-skills)（`plugins-community/cannbot-insight`）迁入落地并发布 npm；`packages/sift` 待迁入。文档将随各包落地逐步补齐。
+> `packages/insight`、`packages/cpx` 与 `packages/sift` 均已迁入仓库；insight 与 cpx 已从 [cannbot-skills](https://gitcode.com/cann/cannbot-skills)（`plugins-community/cannbot-insight`）迁入并发布 npm。跨包架构设计与统一安装指南仍在规划中。
 
 ## 相关链接
 
