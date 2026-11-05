@@ -89,6 +89,49 @@ class TestSecretsScan:
         assert any("credentials" in f.description.lower() for f in secrets.findings)
 
     @staticmethod
+    def test_detects_unquoted_dotenv_credentials(vetter: SecurityVetter, safe_skill_dir: Path):
+        (safe_skill_dir / ".env").write_text("API_KEY=sk_test_0123456789abcdef\n", encoding="utf-8")
+        report = vetter.vet(safe_skill_dir)
+        secrets = [s for s in report.scanners if s.name == "secrets-scan"][0]
+        assert secrets.status == ScannerStatus.WARN
+        assert any(f.file_path == ".env" and f.line == 1 for f in secrets.findings)
+        assert report.verdict == SecurityVerdict.REVIEW_NEEDED
+
+    @staticmethod
+    def test_long_unquoted_placeholder_does_not_trigger_secret_finding(
+        vetter: SecurityVetter, safe_skill_dir: Path
+    ):
+        (safe_skill_dir / ".env.example").write_text(
+            "API_KEY=your_api_key_here\nSECRET=changeme_changeme\n", encoding="utf-8"
+        )
+        report = vetter.vet(safe_skill_dir)
+        secrets = [s for s in report.scanners if s.name == "secrets-scan"][0]
+        assert secrets.status == ScannerStatus.PASS
+        assert not secrets.findings
+        assert report.verdict == SecurityVerdict.SAFE
+
+    @staticmethod
+    def test_credential_key_matching_is_case_insensitive(
+        vetter: SecurityVetter, safe_skill_dir: Path
+    ):
+        (safe_skill_dir / ".env").write_text(
+            'tOkEn="0123456789abcdef0123"\n', encoding="utf-8"
+        )
+        report = vetter.vet(safe_skill_dir)
+        secrets = [s for s in report.scanners if s.name == "secrets-scan"][0]
+        assert secrets.status == ScannerStatus.FAIL
+        assert report.verdict == SecurityVerdict.BLOCKED
+
+    @staticmethod
+    def test_short_unquoted_dotenv_placeholder_passes(vetter: SecurityVetter, safe_skill_dir: Path):
+        (safe_skill_dir / ".env").write_text("API_KEY=dev\n", encoding="utf-8")
+        report = vetter.vet(safe_skill_dir)
+        secrets = [s for s in report.scanners if s.name == "secrets-scan"][0]
+        assert secrets.status == ScannerStatus.PASS
+        assert not secrets.findings
+        assert report.verdict == SecurityVerdict.SAFE
+
+    @staticmethod
     def test_detects_base64_strings(vetter: SecurityVetter, base64_skill_dir: Path):
         report = vetter.vet(base64_skill_dir)
         secrets = [s for s in report.scanners if s.name == "secrets-scan"][0]

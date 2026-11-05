@@ -34,6 +34,51 @@ from sift.models import (
     SecurityVerdict,
 )
 
+_SECRET_PATTERN = re.compile(
+    r"(api_key|apikey|secret|token|password|credential)\s*[:=]\s*"
+    r"(?:(?P<quote>['\"])(?P<quoted>[A-Za-z0-9_\-]{16,})(?P=quote)|"
+    r"(?P<bare>[A-Za-z0-9_\-]{16,}))(?![A-Za-z0-9_\-])",
+    re.IGNORECASE,
+)
+_PLACEHOLDER_PATTERN = re.compile(
+    r"(?:^|[._-])"
+    r"(?:your|replace|example|sample|dummy|fake|placeholder|changeme|change_me|todo|insert|enter)"
+    r"(?:$|[._-])",
+    re.IGNORECASE,
+)
+_BASE64_PATTERN = re.compile(r"['\"][A-Za-z0-9+/]{40,}={0,2}['\"]")
+
+
+def _scan_credential_lines(skill_path: Path) -> list[SecurityFinding]:
+    findings: list[SecurityFinding] = []
+    for rel, text in _scan_text_files(
+        skill_path, exclude_suffixes=(".pyc", ".pyo", ".so", ".dylib", ".png", ".jpg", ".gif", ".pdf")
+    ):
+        for i, line in enumerate(text.splitlines(), 1):
+            match = _SECRET_PATTERN.search(line)
+            if not match:
+                continue
+            bare_value = match.group("bare")
+            if bare_value and _PLACEHOLDER_PATTERN.search(bare_value):
+                continue
+            severity = SecuritySeverity.MEDIUM if bare_value else SecuritySeverity.HIGH
+            description = (
+                "Unquoted credential-like value detected (review manually)"
+                if bare_value
+                else "Hardcoded credentials detected"
+            )
+            findings.append(
+                SecurityFinding(
+                    scanner="secrets-scan",
+                    severity=severity,
+                    description=description,
+                    file_path=rel,
+                    line=i,
+                )
+            )
+            break
+    return findings
+
 
 class SecurityVetter:
     def __init__(self, skip_external: bool = False):
@@ -41,33 +86,9 @@ class SecurityVetter:
 
     @staticmethod
     def _scan_secrets(skill_path: Path) -> ScannerResult:
-        findings: list[SecurityFinding] = []
-
-        secret_pattern = re.compile(
-            r"(api_key|apikey|secret|token|password|credential)\s*[:=]\s*['\"][A-Za-z0-9_\-]{16,}['\"]",
-            re.IGNORECASE,
-        )
-
-        for rel, text in _scan_text_files(
-            skill_path, exclude_suffixes=(".pyc", ".pyo", ".so", ".dylib", ".png", ".jpg", ".gif", ".pdf")
-        ):
-            for i, line in enumerate(text.splitlines(), 1):
-                if not (secret_pattern.search(line)):
-                    continue
-                findings.append(
-                    SecurityFinding(
-                        scanner="secrets-scan",
-                        severity=SecuritySeverity.HIGH,
-                        description="Hardcoded credentials detected",
-                        file_path=rel,
-                        line=i,
-                    )
-                )
-                break
-
-        base64_pattern = re.compile(r"""['"][A-Za-z0-9+/]{40,}={0,2}['"]""")
+        findings = _scan_credential_lines(skill_path)
         for rel, text in _scan_text_files(skill_path, include_suffixes=(".sh", ".py", ".js", ".ts")):
-            has_base64 = any(base64_pattern.search(line) for line in text.splitlines())
+            has_base64 = any(_BASE64_PATTERN.search(line) for line in text.splitlines())
             if not (has_base64 and not any(f.file_path == rel for f in findings)):
                 continue
             findings.append(
@@ -87,7 +108,7 @@ class SecurityVetter:
             msg = "Hardcoded credentials detected"
         elif has_medium:
             status = ScannerStatus.WARN
-            msg = "Base64 encoded strings found"
+            msg = "Potential secrets require manual review"
         else:
             status = ScannerStatus.PASS
             msg = "No hardcoded secrets found"
@@ -170,7 +191,6 @@ class SecurityVetter:
     def vet_url(self, url: str) -> SecurityReport:
         tmpdir = tempfile.mkdtemp(prefix="sift-vet-")
         try:
-            skill_name = url.rstrip("/").split("/")[-1].replace(".git", "")
             subprocess.run(
                 [resolve_executable("git"), "clone", "--depth", "1", url, tmpdir],
                 capture_output=True,
