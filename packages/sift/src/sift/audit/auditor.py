@@ -1224,6 +1224,8 @@ class InstructionEngine:
             call_options: 单类判官的调用配置(``JudgeCallOptions``)。本函数读取字段:
                 model: LLM 模型名(None 走 call_claude 默认)。
                 timeout: LLM 调用超时秒数。
+                on_progress: 分批判定进度回调。
+                on_usage: 分批判定的用量回调。
 
         Returns:
             每条指令一个 AuditFinding,顺序与输入一致;category 全 CONDITIONAL;
@@ -1275,11 +1277,13 @@ class InstructionEngine:
             evidence: 单份执行记录证据(``JudgeTranscript``)。本函数读取字段:
                 name: 该 transcript 的文件名,填进 finding.transcript。
                 text: 该 transcript 的执行记录文本(截断 [:8000] 防 prompt 过长)。
-                aux_trace / dispatch_returns: 旁路证据 / 派发-回报对(与条件类判官
-                    同名字段作用一致)。
+                aux_trace: 子代理作用域工具痕迹,作为判定证据传入 prompt。
+                dispatch_returns: 派发-回报对,用于把判定证据关联到具体派发。
             call_options: 单类判官的调用配置(``JudgeCallOptions``)。本函数读取字段:
                 model: LLM 模型名(None 走 call_claude 默认)。
                 timeout: LLM 调用超时秒数。
+                on_progress: 分批判定进度回调。
+                on_usage: 分批判定的用量回调。
                 locate_turns: turn 定位开关(默认 False=关)。
 
         Returns:
@@ -1339,11 +1343,14 @@ class InstructionEngine:
             evidence: 单份执行记录证据(``JudgeTranscript``)。本函数读取字段:
                 name: 该 transcript 的文件名,填进 finding.transcript。
                 text: 该 transcript 的执行记录文本(截断 [:8000] 防 prompt 过长)。
-                tool_trace / aux_trace / dispatch_returns: 判定证据(与条件类判官
-                    同名字段作用一致)。
+                tool_trace: 主作用域工具调用记录,传入判定 prompt。
+                aux_trace: 子代理作用域工具调用记录,传入判定 prompt。
+                dispatch_returns: 派发-回报对,传入判定 prompt 供步骤结论溯源。
             call_options: 单类判官的调用配置(``JudgeCallOptions``)。本函数读取字段:
                 model: LLM 模型名(None 走 call_claude 默认)。
                 timeout: LLM 调用超时秒数。
+                on_progress: 分批判定进度回调。
+                on_usage: 分批判定的用量回调。
                 locate_turns: turn 定位开关(默认 False=关)。
 
         Returns:
