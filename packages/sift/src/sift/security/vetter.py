@@ -306,9 +306,36 @@ def _scanner_security_result(data):
 
 def _scan_text_files(skill_path: Path, include_suffixes=None, exclude_suffixes=()):
     """Yield readable scan inputs with the requested suffix policy and relative names."""
-    for root, _dirs, files in os.walk(skill_path):
+    visited_dirs: set[str] = set()
+    skill_root = os.path.normcase(os.path.realpath(skill_path))
+
+    def is_within_skill(path: str) -> bool:
+        resolved = os.path.normcase(os.path.realpath(path))
+        try:
+            return os.path.commonpath((skill_root, resolved)) == skill_root
+        except ValueError:
+            return False
+
+    for root, dirs, files in os.walk(skill_path, followlinks=True):
+        # Directory symlinks are part of the skill's reachable content. Follow them,
+        # but visit each resolved directory once so aliases and cycles cannot recurse
+        # indefinitely or duplicate findings.
+        resolved_root = os.path.normcase(os.path.realpath(root))
+        if not is_within_skill(root):
+            dirs.clear()
+            continue
+        if resolved_root in visited_dirs:
+            dirs.clear()
+            continue
+        visited_dirs.add(resolved_root)
+
+        # Do not follow directory symlinks that escape the skill root.
+        dirs[:] = [dirname for dirname in dirs if is_within_skill(os.path.join(root, dirname))]
+
         for fname in files:
             path = Path(root) / fname
+            if not is_within_skill(path):
+                continue
             if include_suffixes is not None and path.suffix not in include_suffixes:
                 continue
             if path.suffix in exclude_suffixes:
