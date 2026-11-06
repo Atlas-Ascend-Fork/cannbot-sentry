@@ -10,11 +10,12 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
 
-from sift.models import ScannerStatus, SecurityVerdict
+from sift.models import ScannerStatus, SecurityReport, SecurityVerdict
 from sift.security.vetter import SecurityVetter
 
 
@@ -82,15 +83,21 @@ class TestSecretsScan:
         assert secrets.status == ScannerStatus.PASS
 
     @staticmethod
-    def test_detects_hardcoded_credentials(vetter: SecurityVetter, malicious_skill_dir: Path):
+    def test_detects_hardcoded_credentials(
+        vetter: SecurityVetter, malicious_skill_dir: Path
+    ):
         report = vetter.vet(malicious_skill_dir)
         secrets = [s for s in report.scanners if s.name == "secrets-scan"][0]
         assert secrets.status == ScannerStatus.FAIL
         assert any("credentials" in f.description.lower() for f in secrets.findings)
 
     @staticmethod
-    def test_detects_unquoted_dotenv_credentials(vetter: SecurityVetter, safe_skill_dir: Path):
-        (safe_skill_dir / ".env").write_text("API_KEY=sk_test_0123456789abcdef\n", encoding="utf-8")
+    def test_detects_unquoted_dotenv_credentials(
+        vetter: SecurityVetter, safe_skill_dir: Path
+    ):
+        (safe_skill_dir / ".env").write_text(
+            "API_KEY=sk_test_0123456789abcdef\n", encoding="utf-8"
+        )
         report = vetter.vet(safe_skill_dir)
         secrets = [s for s in report.scanners if s.name == "secrets-scan"][0]
         assert secrets.status == ScannerStatus.WARN
@@ -123,7 +130,9 @@ class TestSecretsScan:
         assert report.verdict == SecurityVerdict.BLOCKED
 
     @staticmethod
-    def test_short_unquoted_dotenv_placeholder_passes(vetter: SecurityVetter, safe_skill_dir: Path):
+    def test_short_unquoted_dotenv_placeholder_passes(
+        vetter: SecurityVetter, safe_skill_dir: Path
+    ):
         (safe_skill_dir / ".env").write_text("API_KEY=dev\n", encoding="utf-8")
         report = vetter.vet(safe_skill_dir)
         secrets = [s for s in report.scanners if s.name == "secrets-scan"][0]
@@ -164,14 +173,18 @@ class TestStructureCheck:
     def test_detects_missing_frontmatter(vetter: SecurityVetter, tmp_path: Path):
         skill = tmp_path / "no-frontmatter"
         skill.mkdir()
-        (skill / "SKILL.md").write_text("# No frontmatter\nJust a plain skill.\n", encoding="utf-8")
+        (skill / "SKILL.md").write_text(
+            "# No frontmatter\nJust a plain skill.\n", encoding="utf-8"
+        )
         report = vetter.vet(skill)
         structure = [s for s in report.scanners if s.name == "structure-check"][0]
         assert structure.status == ScannerStatus.WARN
         assert any("frontmatter" in f.description.lower() for f in structure.findings)
 
     @staticmethod
-    def test_detects_dangerous_commands(vetter: SecurityVetter, malicious_skill_dir: Path):
+    def test_detects_dangerous_commands(
+        vetter: SecurityVetter, malicious_skill_dir: Path
+    ):
         report = vetter.vet(malicious_skill_dir)
         structure = [s for s in report.scanners if s.name == "structure-check"][0]
         assert structure.status == ScannerStatus.FAIL
@@ -276,22 +289,113 @@ class TestVerdictLogic:
         assert report.verdict == SecurityVerdict.SAFE
 
     @staticmethod
-    def test_malicious_skill_verdict_blocked(vetter: SecurityVetter, malicious_skill_dir: Path):
+    def test_malicious_skill_verdict_blocked(
+        vetter: SecurityVetter, malicious_skill_dir: Path
+    ):
         report = vetter.vet(malicious_skill_dir)
         assert report.verdict == SecurityVerdict.BLOCKED
 
     @staticmethod
-    def test_base64_skill_verdict_review(vetter: SecurityVetter, base64_skill_dir: Path):
+    def test_base64_skill_verdict_review(
+        vetter: SecurityVetter, base64_skill_dir: Path
+    ):
         report = vetter.vet(base64_skill_dir)
         assert report.verdict == SecurityVerdict.REVIEW_NEEDED
 
     @staticmethod
-    def test_missing_skill_md_verdict_blocked(vetter: SecurityVetter, no_skill_md_dir: Path):
+    def test_missing_skill_md_verdict_blocked(
+        vetter: SecurityVetter, no_skill_md_dir: Path
+    ):
         report = vetter.vet(no_skill_md_dir)
         assert report.verdict == SecurityVerdict.BLOCKED
 
 
 class TestExternalScanners:
+    @staticmethod
+    def test_vet_url_report_identity_does_not_keep_credentials(
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        vetter = SecurityVetter(skip_external=True)
+        report = SecurityReport(
+            skill_name="", skill_path="", verdict=SecurityVerdict.SAFE
+        )
+        monkeypatch.setattr(vetter, "vet", lambda _: report)
+        monkeypatch.setattr(
+            "sift.security.vetter.subprocess.run", lambda *args, **kwargs: None
+        )
+
+        result = vetter.vet_url(
+            "https://account:secret@example.com/org/remote-skill.git?token=secret#fragment"
+        )
+
+        assert result.skill_name == "remote-skill"
+        assert result.skill_path == "https://example.com/org/remote-skill.git"
+        assert "secret" not in result.skill_path
+
+    @staticmethod
+    @pytest.mark.parametrize(
+        ("url", "identity", "skill_name"),
+        [
+            (
+                "git@github.com:org/remote-skill.git",
+                "ssh://git@github.com/org/remote-skill.git",
+                "remote-skill",
+            ),
+            (
+                "alice@git.example.com:org/remote-skill.git",
+                "ssh://alice@git.example.com/org/remote-skill.git",
+                "remote-skill",
+            ),
+            (
+                "github.com:org/remote-skill.git",
+                "ssh://github.com/org/remote-skill.git",
+                "remote-skill",
+            ),
+            (
+                "github.com:/org/remote-skill.git",
+                "ssh://github.com/org/remote-skill.git",
+                "remote-skill",
+            ),
+        ],
+    )
+    def test_vet_url_scp_forms_report_ssh_identity(
+        monkeypatch, url, identity, skill_name
+    ):
+        vetter = SecurityVetter(skip_external=True)
+        report = SecurityReport(
+            skill_name="", skill_path="", verdict=SecurityVerdict.SAFE
+        )
+        monkeypatch.setattr(vetter, "vet", lambda _: report)
+        monkeypatch.setattr(
+            "sift.security.vetter.subprocess.run", lambda *args, **kwargs: None
+        )
+
+        result = vetter.vet_url(url)
+
+        assert result.skill_name == skill_name
+        assert result.skill_path == identity
+
+    @staticmethod
+    def test_vet_url_clone_failure_does_not_expose_credentials(monkeypatch):
+        vetter = SecurityVetter(skip_external=True)
+
+        def fail_clone(*args, **kwargs):
+            raise subprocess.CalledProcessError(
+                128,
+                ["git", "clone", "https://account:secret@example.com/org/repo.git"],
+            )
+
+        monkeypatch.setattr("sift.security.vetter.subprocess.run", fail_clone)
+
+        with pytest.raises(RuntimeError) as exc_info:
+            vetter.vet_url("https://account:secret@example.com/org/repo.git")
+
+        assert "secret" not in str(exc_info.value)
+        assert (
+            str(exc_info.value)
+            == "git clone failed for https://example.com/org/repo.git (exit code 128)"
+        )
+
     @staticmethod
     def test_skip_external_skips_aguara(safe_skill_dir: Path):
         vetter = SecurityVetter(skip_external=True)

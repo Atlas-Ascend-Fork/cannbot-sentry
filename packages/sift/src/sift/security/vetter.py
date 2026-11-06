@@ -23,6 +23,7 @@ import shutil
 import subprocess
 import tempfile
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from sift.executables import resolve_executable
 from sift.models import (
@@ -52,7 +53,17 @@ _BASE64_PATTERN = re.compile(r"['\"][A-Za-z0-9+/]{40,}={0,2}['\"]")
 def _scan_credential_lines(skill_path: Path) -> list[SecurityFinding]:
     findings: list[SecurityFinding] = []
     for rel, text in _scan_text_files(
-        skill_path, exclude_suffixes=(".pyc", ".pyo", ".so", ".dylib", ".png", ".jpg", ".gif", ".pdf")
+        skill_path,
+        exclude_suffixes=(
+            ".pyc",
+            ".pyo",
+            ".so",
+            ".dylib",
+            ".png",
+            ".jpg",
+            ".gif",
+            ".pdf",
+        ),
     ):
         for i, line in enumerate(text.splitlines(), 1):
             match = _SECRET_PATTERN.search(line)
@@ -87,7 +98,9 @@ class SecurityVetter:
     @staticmethod
     def _scan_secrets(skill_path: Path) -> ScannerResult:
         findings = _scan_credential_lines(skill_path)
-        for rel, text in _scan_text_files(skill_path, include_suffixes=(".sh", ".py", ".js", ".ts")):
+        for rel, text in _scan_text_files(
+            skill_path, include_suffixes=(".sh", ".py", ".js", ".ts")
+        ):
             has_base64 = any(_BASE64_PATTERN.search(line) for line in text.splitlines())
             if not (has_base64 and not any(f.file_path == rel for f in findings)):
                 continue
@@ -100,7 +113,10 @@ class SecurityVetter:
                 )
             )
 
-        has_high = any(f.severity in (SecuritySeverity.CRITICAL, SecuritySeverity.HIGH) for f in findings)
+        has_high = any(
+            f.severity in (SecuritySeverity.CRITICAL, SecuritySeverity.HIGH)
+            for f in findings
+        )
         has_medium = any(f.severity == SecuritySeverity.MEDIUM for f in findings)
 
         if has_high:
@@ -113,7 +129,9 @@ class SecurityVetter:
             status = ScannerStatus.PASS
             msg = "No hardcoded secrets found"
 
-        return ScannerResult(name="secrets-scan", status=status, findings=findings, message=msg)
+        return ScannerResult(
+            name="secrets-scan", status=status, findings=findings, message=msg
+        )
 
     @staticmethod
     def _scan_structure(skill_path: Path) -> ScannerResult:
@@ -123,7 +141,9 @@ class SecurityVetter:
             r"(rm\s+-rf\s|curl.*\|\s*(ba)?sh|wget.*\|\s*(ba)?sh|\beval\s|\bexec\s+\S)",
             re.IGNORECASE,
         )
-        for rel, text in _scan_text_files(skill_path, include_suffixes=(".sh", ".py", ".js", ".ts")):
+        for rel, text in _scan_text_files(
+            skill_path, include_suffixes=(".sh", ".py", ".js", ".ts")
+        ):
             for i, line in enumerate(text.splitlines(), 1):
                 if not (dangerous_pattern.search(line)):
                     continue
@@ -149,7 +169,9 @@ class SecurityVetter:
             status = ScannerStatus.PASS
             msg = "Skill structure valid"
 
-        return ScannerResult(name="structure-check", status=status, findings=findings, message=msg)
+        return ScannerResult(
+            name="structure-check", status=status, findings=findings, message=msg
+        )
 
     def vet(self, skill_path: Path) -> SecurityReport:
         skill_path = skill_path.resolve()
@@ -166,8 +188,14 @@ class SecurityVetter:
         for s in scanners:
             all_findings.extend(s.findings)
 
-        high_count = sum(1 for f in all_findings if f.severity in (SecuritySeverity.CRITICAL, SecuritySeverity.HIGH))
-        medium_count = sum(1 for f in all_findings if f.severity == SecuritySeverity.MEDIUM)
+        high_count = sum(
+            1
+            for f in all_findings
+            if f.severity in (SecuritySeverity.CRITICAL, SecuritySeverity.HIGH)
+        )
+        medium_count = sum(
+            1 for f in all_findings if f.severity == SecuritySeverity.MEDIUM
+        )
 
         if high_count > 0:
             verdict = SecurityVerdict.BLOCKED
@@ -191,19 +219,53 @@ class SecurityVetter:
     def vet_url(self, url: str) -> SecurityReport:
         tmpdir = tempfile.mkdtemp(prefix="sift-vet-")
         try:
-            subprocess.run(
-                [resolve_executable("git"), "clone", "--depth", "1", url, tmpdir],
-                capture_output=True,
-                timeout=60,
-                check=True,
+            scp_match = re.fullmatch(
+                r"(?:(?P<user>[^/@:\s]+)@)?(?P<host>[^/:\s]+):(?!//)(?P<path>[^?#\s]+)(?:[?#].*)?",
+                url,
             )
-            return self.vet(Path(tmpdir))
+            if scp_match:
+                user = scp_match.group("user")
+                host = scp_match.group("host")
+                repo_path = scp_match.group("path")
+                safe_url = f"ssh://{user + '@' if user else ''}{host}/{repo_path.lstrip('/')}"
+            else:
+                parts = urlsplit(url)
+                safe_url = parts._replace(
+                    netloc=parts.netloc.rsplit("@", 1)[-1], query="", fragment=""
+                ).geturl()
+                repo_path = parts.path
+            skill_name = repo_path.rstrip("/").rsplit("/", 1)[-1].removesuffix(".git")
+            try:
+                subprocess.run(
+                    [resolve_executable("git"), "clone", "--depth", "1", url, tmpdir],
+                    capture_output=True,
+                    timeout=60,
+                    check=True,
+                )
+            except subprocess.CalledProcessError as exc:
+                raise RuntimeError(
+                    f"git clone failed for {safe_url} (exit code {exc.returncode})"
+                ) from None
+            except subprocess.TimeoutExpired:
+                raise RuntimeError(f"git clone timed out for {safe_url}") from None
+            except OSError:
+                raise RuntimeError(
+                    f"git clone could not start for {safe_url}"
+                ) from None
+            report = self.vet(Path(tmpdir))
+            report.skill_name = skill_name or Path(tmpdir).name
+            report.skill_path = safe_url
+            return report
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
     def _scan_aguara(self, skill_path: Path) -> ScannerResult:
         if self._skip_external:
-            return ScannerResult(name="aguara", status=ScannerStatus.SKIP, message="External scanners disabled")
+            return ScannerResult(
+                name="aguara",
+                status=ScannerStatus.SKIP,
+                message="External scanners disabled",
+            )
 
         aguara_bin = shutil.which("aguara")
         if not aguara_bin:
@@ -226,21 +288,33 @@ class SecurityVetter:
             )
             result = proc.stdout.strip()
         except (subprocess.TimeoutExpired, OSError):
-            return ScannerResult(name="aguara", status=ScannerStatus.SKIP, message="aguara execution failed")
+            return ScannerResult(
+                name="aguara",
+                status=ScannerStatus.SKIP,
+                message="aguara execution failed",
+            )
 
         if not result:
-            return ScannerResult(name="aguara", status=ScannerStatus.PASS, message="No issues found")
+            return ScannerResult(
+                name="aguara", status=ScannerStatus.PASS, message="No issues found"
+            )
 
         try:
             data = json.loads(result)
         except json.JSONDecodeError:
-            return ScannerResult(name="aguara", status=ScannerStatus.PASS, message="No structured output")
+            return ScannerResult(
+                name="aguara", status=ScannerStatus.PASS, message="No structured output"
+            )
 
         return _aguara_report(data)
 
     def _scan_skill_scanner(self, skill_path: Path) -> ScannerResult:
         if self._skip_external:
-            return ScannerResult(name="skill-scanner", status=ScannerStatus.SKIP, message="External scanners disabled")
+            return ScannerResult(
+                name="skill-scanner",
+                status=ScannerStatus.SKIP,
+                message="External scanners disabled",
+            )
 
         scanner_bin = shutil.which("skill-scanner")
         if not scanner_bin:
@@ -260,16 +334,26 @@ class SecurityVetter:
             result = proc.stdout.strip()
         except (subprocess.TimeoutExpired, OSError):
             return ScannerResult(
-                name="skill-scanner", status=ScannerStatus.SKIP, message="skill-scanner execution failed"
+                name="skill-scanner",
+                status=ScannerStatus.SKIP,
+                message="skill-scanner execution failed",
             )
 
         if not result:
-            return ScannerResult(name="skill-scanner", status=ScannerStatus.PASS, message="No issues found")
+            return ScannerResult(
+                name="skill-scanner",
+                status=ScannerStatus.PASS,
+                message="No issues found",
+            )
 
         try:
             data = json.loads(result)
         except json.JSONDecodeError:
-            return ScannerResult(name="skill-scanner", status=ScannerStatus.PASS, message="No structured output")
+            return ScannerResult(
+                name="skill-scanner",
+                status=ScannerStatus.PASS,
+                message="No structured output",
+            )
 
         return _scanner_security_result(data)
 
@@ -284,7 +368,11 @@ def _scanner_security_result(data):
     severity = severity_map.get(severity_str, SecuritySeverity.LOW)
 
     findings: list[SecurityFinding] = []
-    if severity in (SecuritySeverity.CRITICAL, SecuritySeverity.HIGH, SecuritySeverity.MEDIUM):
+    if severity in (
+        SecuritySeverity.CRITICAL,
+        SecuritySeverity.HIGH,
+        SecuritySeverity.MEDIUM,
+    ):
         findings.append(
             SecurityFinding(
                 scanner="skill-scanner",
@@ -301,7 +389,9 @@ def _scanner_security_result(data):
         status = ScannerStatus.PASS
 
     msg = data.get("description", "No critical vulnerabilities found")
-    return ScannerResult(name="skill-scanner", status=status, findings=findings, message=msg)
+    return ScannerResult(
+        name="skill-scanner", status=status, findings=findings, message=msg
+    )
 
 
 def _scan_text_files(skill_path: Path, include_suffixes=None, exclude_suffixes=()):
@@ -343,7 +433,9 @@ def _scan_text_files(skill_path: Path, include_suffixes=None, exclude_suffixes=(
             try:
                 text = path.read_text(encoding="utf-8", errors="ignore")
             except OSError:
-                logging.getLogger(__name__).debug("Could not read scanner input %s", path, exc_info=True)
+                logging.getLogger(__name__).debug(
+                    "Could not read scanner input %s", path, exc_info=True
+                )
                 continue
             yield str(path.relative_to(skill_path)), text
 
@@ -369,7 +461,11 @@ def _aguara_report(data: dict) -> ScannerResult:
             )
         )
 
-    high = [f for f in findings if f.severity in (SecuritySeverity.CRITICAL, SecuritySeverity.HIGH)]
+    high = [
+        f
+        for f in findings
+        if f.severity in (SecuritySeverity.CRITICAL, SecuritySeverity.HIGH)
+    ]
     medium = [f for f in findings if f.severity == SecuritySeverity.MEDIUM]
 
     if high:
@@ -405,7 +501,9 @@ def _check_skill_metadata(skill_path: Path) -> tuple[list[SecurityFinding], int]
         try:
             content = skill_md.read_text(encoding="utf-8")
         except OSError:
-            logging.getLogger(__name__).debug("Optional operation failed; continuing with fallback", exc_info=True)
+            logging.getLogger(__name__).debug(
+                "Optional operation failed; continuing with fallback", exc_info=True
+            )
 
         if content and not content.lstrip().startswith("---"):
             findings.append(
