@@ -265,6 +265,15 @@ async function handleStream(
   }
 
   let dumpedText = '';
+  // Capture is best-effort: an unexpected event must not interrupt the
+  // response delivered to the caller, including later chunks of the stream.
+  const captureChunk = (chunk: string) => {
+    try {
+      reassembler.feed(chunk);
+    } catch (e) {
+      console.error('[proxy] stream capture failed:', e instanceof Error ? e.message : e);
+    }
+  };
   try {
     const decoder = new TextDecoder();
     for (;;) {
@@ -272,13 +281,13 @@ async function handleStream(
       if (done) break;
       if (value) {
         const chunk = decoder.decode(value, { stream: true });
-        reassembler.feed(chunk);
+        captureChunk(chunk);
         res.write(value);
         if (dumpId && dumpedText.length < DUMP_BODY_CAP) dumpedText += chunk;
       }
     }
     // flush trailing multibyte bytes
-    reassembler.feed(decoder.decode());
+    captureChunk(decoder.decode());
   } catch {
     // client disconnect — still record what we captured
   }
