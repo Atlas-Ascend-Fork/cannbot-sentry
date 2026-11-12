@@ -1,9 +1,9 @@
 // Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
 // This program is free software, you can redistribute it and/or modify it under the terms and conditions of
-// CANN Open Software License Agreement Version 2.0 (the "License).
-// Please refer to the License for details. You should not use this file except in compliance with the License.
+// CANN Open Software License Agreement Version 2.0 (the "License").
+// Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
-// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE.
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
 // wire-rounds delta IT：?delta=1 只回每轮新增段（append-only 历史增量，
@@ -14,7 +14,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { prisma } from '../setup';
-import { GET } from '@/app/api/observe/session/wire-rounds/route';
+import { GET } from '@/lib/observe/session-handlers/wire-rounds';
 
 // 路由级 IT（seed + 读捕获文件 + 双请求对比）：本体 <1s，满载并行下测试库
 // 锁竞争偶发超默认 5s，30s 为容错上限（与 GIT_PIPELINE_TIMEOUT_MS 同口径）

@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
-// This program is free software: you can redistribute it and/or modify it under the terms and conditions of
+// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
 // CANN Open Software License Agreement Version 2.0 (the "License").
 // Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
@@ -288,7 +288,7 @@ export function redactRemoteSecrets(
 // 反查——gitcode 上 owner=null 意味着令牌没能通过 /user（无效/过期/查询失败），
 // 只能诚实报「凭据未能验证」，不得声称「凭据已验证」（公开仓匿名可通，ls-remote
 // 成功不构成对凭据的任何证明）。account 只认用户实际输入——'oauth2' 是
-// token 模式无账户时的系统兜底占位（requestAuth/LakeTokenDialog 两路同款），
+// token 模式无账户时的系统兜底占位（requestAuth/CannbayTokenDialog 两路同款），
 // 不是「所填账户」，不得参与属主不一致判定（否则误报「与所填账户 oauth2
 // 不一致」）
 export function credentialTestMessage(opts: {

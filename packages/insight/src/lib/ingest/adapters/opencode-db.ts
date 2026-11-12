@@ -34,7 +34,7 @@ type OpencodeSchema = 1 | 2;
 // opencode 2.x 的 session_message 是事件溯源表：除真实会话消息外还混有控制面
 // 行（idle / shell / agent-switched / model-switched / location-switched 等，
 // 每轮响应后追加、无对话内容）。可导入类型的白名单是「列表 turnCount / 导入
-// 管线 / 自动刷新探针」三处的唯一实现——v1 的 message 表没有控制面行，v2 若
+// 管线 / 自动刷新探针」三处的单一真身——v1 的 message 表没有控制面行，v2 若
 // 把 COUNT(*) 直接平移过去会把控制面行算成轮数、列表显示虚高。任何一处口径
 // 变更都必须改这里，避免三处漂移。
 export const V2_IMPORTABLE_TYPES: readonly string[] = [
@@ -541,7 +541,7 @@ function _readSession(db: Database.Database, sessionId: string): RawInteraction[
 
       // 工具真实起止：part.time_created=发起，终态时 time_updated=完成（时间随状态
       // 流转刷新，非终态的 time_updated 不是完成时刻 → completedAt 置 null 降级）
-      // 「终态会刷新 time_updated」已实证（PR #140 review）：真实 v1 活库
+      // 「终态会刷新 time_updated」已实证（review）：真实 v1 活库
       // 1.48GB、15745 条 tool part 全部 time_updated > time_created（无一仅
       // 创建时落值），completed 态 Δ≈260-420ms 合理工具时长
       const terminal = state === 'completed' || state === 'error';
@@ -795,6 +795,16 @@ function v2ToolCallInfo(c: Record<string, unknown>): ToolCallInfo {
     argsJson,
     resultJson,
     state: status,
+    // 工具真实起止（与 v1 part 表列同语义）：item.time.created=发起、终态时
+    // time.completed=完成（真实 v2 活库实测 40928/40938 条 tool 项带完整
+    // time.created/completed）；running 态 completed 未落 → 不取（非终态
+    // time_updated 不是完成时刻），缺省 null 走 turn-split 既有降级
+    startedAt: typeof (c.time as { created?: unknown } | undefined)?.created === 'number'
+      ? (c.time as { created: number }).created
+      : null,
+    completedAt: (status === 'completed' || status === 'error') && typeof (c.time as { completed?: unknown } | undefined)?.completed === 'number'
+      ? (c.time as { completed: number }).completed
+      : null,
   };
 }
 
@@ -892,7 +902,7 @@ function _readSessionV2(db: Database.Database, sessionId: string): RawInteractio
 
   for (const msg of messages) {
     // 控制面行（idle/shell/*-switched）与未知未来类型都不在可导入白名单内，
-    // 与列表 turnCount、自动刷新探针共享同一实现（V2_IMPORTABLE_TYPES）。
+    // 与列表 turnCount、自动刷新探针共享同一真身（V2_IMPORTABLE_TYPES）。
     if (!V2_IMPORTABLE_TYPES.includes(msg.type)) {
       continue;
     }

@@ -130,6 +130,40 @@
        共享同一可视宽度——居中容器与品牌块不随滚动条出现/消失横向跳动 */
     scrollbar-gutter: stable;
   }
+  /* 滚动条全站统一：细胶囊 + 透明轨道 + 悬停加深（原生 overlay 滚动条的观感）。
+     WebKit/Blink 走伪元素三态（透明描边把 10px 命中区收成 ~4px 视觉宽度，
+     悬停加粗加深）；Firefox 走标准属性兜底（无悬停态，取中间明度）。
+     既有隐藏滚动条的规则（工具类 / inert）特异性或层级更高，不受影响 */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in oklab, var(--foreground) 30%, transparent) transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    border: 3px solid transparent;
+    border-radius: 9999px;
+    background: color-mix(in oklab, var(--foreground) 22%, transparent);
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    border-width: 2px;
+    background: color-mix(in oklab, var(--foreground) 42%, transparent);
+  }
+  ::-webkit-scrollbar-thumb:active {
+    background: color-mix(in oklab, var(--foreground) 58%, transparent);
+  }
+  ::-webkit-scrollbar-button {
+    display: none;
+  }
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
 }
 
 /* Run 工作台（暗色画布）：点阵网格底已内嵌 SVG pattern（随 viewBox 矢量缩放，
@@ -224,10 +258,138 @@
   }
 }
 
-/* 滚动边缘渐隐：内容滚到玻璃面板上下缘时用 mask 溶解，替代硬分割线 */
-.run-scroll-fade {
+/* 被玻璃命中索引覆盖的左列（run 节点列表 / 离线查看器会话块）：inert
+   期间滚动条无服务对象，直接隐藏——浮层全幅盖到列缘，滚动条也不再从
+   圆角缺口探出尖角；退出浮层（inert 解除）即恢复 */
+[data-turn-list][inert],
+[data-export-turn-list][inert] {
+  scrollbar-width: none;
+}
+[data-turn-list][inert]::-webkit-scrollbar,
+[data-export-turn-list][inert]::-webkit-scrollbar {
+  display: none;
+}
+
+/* 滚动边缘渐隐：内容滚到面板上下缘时用 mask 溶解，替代硬分割线。滚动
+   感知：data-fade 由 ScrollFade 组件按滚动位置驱动（ui/scroll-fade.tsx）
+   ——只在「该侧真有滚出视口的内容」时渐隐，静止贴边行完整显示（此前
+   无条件双向渐隐会把贴边首行晕染掉） */
+.run-scroll-fade[data-fade="top"] {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 14px, #000 100%);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 14px, #000 100%);
+}
+.run-scroll-fade[data-fade="bottom"] {
+  -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 14px), transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - 14px), transparent 100%);
+}
+.run-scroll-fade[data-fade="top-bottom"] {
   -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
   mask-image: linear-gradient(to bottom, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
+}
+
+/* ── Context 趋势图画布（Graph 相机模型同款）───────────────────
+    SVG 内容层配色走 CSS 变量（暗色模式随 .dark 切换，内容层零
+    backdrop-filter——材质红线不破） */
+:root {
+  --ctx-grid: #eef1f4;
+  --ctx-tick: #94a3b8;
+  --ctx-label-bg: #ffffff;
+}
+
+.dark {
+  --ctx-grid: rgba(148, 163, 184, 0.14);
+  --ctx-tick: #8b98a5;
+  --ctx-label-bg: #1c2530;
+}
+
+/* 曲线入场：pathLength 归一化的描画动画（一次性；组显隐切换重挂时重放，
+   与面积渐显同构成「数据生长」的入场叙事） */
+@keyframes ctx-line-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+
+.ctx-line-draw {
+  animation: ctx-line-draw 900ms var(--run-spring) both;
+}
+
+@keyframes ctx-area-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.ctx-area-in {
+  animation: ctx-area-in 700ms ease-out both;
+}
+
+/* 图例胶囊微交互：spring 缓动 + 按压回弹（工具条按钮同款手感） */
+.ctx-chip {
+  transition:
+    opacity 220ms var(--run-spring),
+    box-shadow 220ms var(--run-spring),
+    transform 220ms var(--run-spring);
+}
+
+.ctx-chip:active {
+  transform: scale(0.97);
+}
+
+/* ── 效率分布图（Perf TPS/TPOT）入场动效：纯 CSS 一次性动画（零 JS
+   定时器与帧循环开销），指标切换重挂 svg 时整体重放——与趋势图同构的
+   「数据生长」叙事：折线归一化描画 → 面积/包络带渐显 → 峰值点弹出，
+   统计条错峰上浮 ─────────────────────────────────────────────────── */
+@keyframes perf-line-draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+}
+
+.perf-line-draw {
+  animation: perf-line-draw 800ms var(--run-spring) both;
+  animation-delay: 120ms;
+}
+
+@keyframes perf-layer-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.perf-area-in {
+  animation: perf-layer-in 640ms ease-out both;
+  animation-delay: 200ms;
+}
+
+.perf-band-in {
+  animation: perf-layer-in 700ms ease-out both;
+  animation-delay: 320ms;
+}
+
+@keyframes perf-peak-in {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+}
+
+.perf-peak-in {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: perf-peak-in 520ms var(--run-spring) both;
+  animation-delay: 560ms;
+}
+
+@keyframes perf-stat-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+}
+
+.perf-stat-in {
+  animation: perf-stat-in 420ms var(--run-spring) both;
 }
 
 /* 工具条按钮微交互：spring 缓动 + 按压回弹 + hover 发光内衬 */
@@ -247,6 +409,48 @@
 
 .run-tool-btn:active {
   transform: scale(0.98);
+}
+
+/* Turns 左列表揭示滚动：挂揭示类期间把 content-visibility 占位块展平为
+   真实布局——远距跳转（深链/跨 tab/搜索命中）的滚动目标按真实几何计算，
+   收尾摘类后恢复跳渲染（占位尺寸已被记住，恢复不引起跳动） */
+.turn-list-revealing .turn-rows,
+.turn-list-revealing .turn-row-cv {
+  content-visibility: visible;
+}
+
+/* Turns 行级跳渲染：万行级列表的滚动帧与「就绪交换」亮相时刻只处理可视
+   区行（离屏行跳过 style/layout/paint，以估算高度参与布局；渲染过的行
+   由 contain-intrinsic-size:auto 记住真实高度，恢复不引起跳动） */
+.turn-row-cv {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 32px;
+}
+
+/* Turns 命中索引玻璃浮层入场：自左缘轻移淡入（纯 transform/opacity，
+   基准缓动）——覆盖感而非换页 */
+@keyframes turns-hits-in {
+  from {
+    opacity: 0;
+    transform: translateX(-10px) scale(0.985);
+  }
+}
+
+.turns-hits-in {
+  animation: turns-hits-in 200ms var(--run-spring);
+}
+
+/* Turns 角色筛选条入场：首份成员数据落地时自上轻落淡入（纯
+   transform/opacity + 弹簧曲线）——列表头的从属控件，不做整块位移 */
+@keyframes role-filter-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.role-filter-in {
+  animation: role-filter-in 200ms var(--run-spring);
 }
 
 /* 数据仓令牌引导弹窗装饰动画（图标弹性入场 / 保存成功弹出） */
@@ -309,5 +513,95 @@
   .run-tool-btn:active {
     transition: none;
     transform: none;
+  }
+
+  .ctx-line-draw,
+  .ctx-area-in {
+    animation: none;
+  }
+
+  .ctx-chip,
+  .ctx-chip:active {
+    transition: none;
+    transform: none;
+  }
+}
+/* 上传结果 HUD（顶置瞬态确认）：卡片 = 顶部沉降至位（先快后缓曲线），
+   图标 = 弹簧弹入（轻微过冲）；reduced-motion 下退化为无位移淡入 */
+@keyframes hud-in {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes hud-icon-pop {
+  0% {
+    opacity: 0;
+    transform: scale(0);
+  }
+  60% {
+    opacity: 1;
+    transform: scale(1.12);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes hud-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.hud-enter {
+  animation: hud-in 380ms cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+.hud-icon-pop {
+  animation: hud-icon-pop 420ms cubic-bezier(0.34, 1.56, 0.64, 1) 90ms both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hud-enter {
+    animation: hud-fade 120ms ease-out both;
+  }
+
+  .hud-icon-pop {
+    animation: none;
+  }
+}
+
+/* 加载呼吸占位（全站加载语言，承总览 pending 脉冲）：软明暗呼吸 + 轻收缩
+   （纯 opacity/transform，不触发布局），数据落地零跳变；卡片间以相位差
+   错开形成波动感 */
+@keyframes load-breathe {
+  0%, 100% {
+    opacity: 0.45;
+    transform: scale(0.985);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.load-breathe {
+  animation: load-breathe 2.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .load-breathe {
+    animation: load-breathe 4.8s ease-in-out infinite;
   }
 }

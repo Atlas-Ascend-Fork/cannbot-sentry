@@ -1,7 +1,7 @@
 // Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
-// This program is free software: you can redistribute it and/or modify it under the terms and conditions of
+// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
 // CANN Open Software License Agreement Version 2.0 (the "License").
-// You may refer to the License for details. You may not use this file except in compliance with the License.
+// Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
@@ -20,7 +20,7 @@ const fakePrisma = {
   session: { findMany: vi.fn(), deleteMany: vi.fn(), delete: vi.fn() },
   turn: { groupBy: vi.fn(), findMany: vi.fn(), deleteMany: vi.fn() },
   toolCall: { findMany: vi.fn(), deleteMany: vi.fn() },
-  skillEvent: { deleteMany: vi.fn() },
+  skillEvent: { findMany: vi.fn(), deleteMany: vi.fn() },
   execution: { deleteMany: vi.fn() },
   executionSkill: { deleteMany: vi.fn() },
   sessionSkill: { deleteMany: vi.fn() },
@@ -68,6 +68,7 @@ beforeEach(() => {
   fakePrisma.turn.groupBy.mockReset().mockResolvedValue([]);
   fakePrisma.turn.findMany.mockReset().mockResolvedValue([]);
   fakePrisma.toolCall.findMany.mockReset().mockResolvedValue([]);
+  fakePrisma.skillEvent.findMany.mockReset().mockResolvedValue([]);
   fakePrisma.$transaction.mockReset().mockResolvedValue([]);
   // 预置 mini run（graph-demo 结构断言走 reader/view-model IT，这里覆盖链路）
   saveRun(miniManifest, null, path.join(tmpHome, 'runs'));
@@ -136,6 +137,14 @@ describe('GET /api/observe/run/[runId]', () => {
     });
     // 缺正文成员（mock 只返回一行）：verify 成员 session=null
     expect(build0.attempts[0].verifyMember.session).toBeNull();
+    // 观测聚合（刀A）：Σ成员指标 + 错误计数（mock 无错误行 → 0）
+    expect(data.memberStats).toMatchObject({
+      joinedCount: 1,
+      totalTokens: 15,
+      totalTurns: 1,
+      memberRowIds: ['row_a'],
+    });
+    expect(data.totalErrors).toBe(0);
   });
 
   it('详情：会话评分融合——turns+toolCalls 批量采集后 ruleScores 注入成员引用', async () => {

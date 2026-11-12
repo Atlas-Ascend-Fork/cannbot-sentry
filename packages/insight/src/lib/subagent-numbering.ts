@@ -1,9 +1,9 @@
 // Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
 // This program is free software, you can redistribute it and/or modify it under the terms and conditions of
-// CANN Open Software License Agreement Version 2.0 (the "License).
-// Please refer to the License for details. You should not use this file except in compliance with the License.
+// CANN Open Software License Agreement Version 2.0 (the "License").
+// Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
-// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE.
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
 // 同名 subagent 的统一编号（Context / Turn / Trace 各视图一致）：
@@ -13,7 +13,7 @@
 // subagent——统一收敛到本模块。
 // 编号只服务同名消歧：唯一名（如 codex 每代理唯一 nickname）不编号——
 // "Volta #1" 的 #1 是纯噪音；同名组（claude 多个 general/Explore）才 1..N。
-// 消费方（TurnTimeline/ContextTracker/详情页/Replay）均有缺号回退分支，
+// 消费方（会话块泳道/ContextTracker/详情页/Replay）均有缺号回退分支，
 // map 中无该组条目 = 显示裸名。
 
 export interface SubagentNumberingTurn {

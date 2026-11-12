@@ -1,8 +1,8 @@
 // Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
-// This program is free software: you can redistribute it and/or modify it under the terms and conditions of
+// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
 // CANN Open Software License Agreement Version 2.0 (the "License").
 // Please refer to the License for details. You may not use this file except in compliance with the License.
-// THIS PROGRAM IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
@@ -23,7 +23,7 @@ import { sessionDurationMs, computeLlmActiveMs } from '../../src/lib/session-dur
 
 const prisma = new PrismaClient();
 const dataRoute = await import('../../src/app/api/observe/data/route.ts');
-const sessionRoute = await import('../../src/app/api/observe/session/route.ts');
+const sessionRoute = await import('@/lib/observe/session-handlers/detail');
 const statsRoute = await import('../../src/app/api/observe/stats/route.ts');
 
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'session-duration-it-'));
@@ -64,7 +64,7 @@ describe('Session Duration 墙钟 + LLM Active 区间并集', () => {
     const row = await prisma.session.findFirst({ where: { taskId: SID } });
     expect(row).not.toBeNull();
     // 前置自检：夹具构造出「Σ latency(100s) ≫ 墙钟(3s)」的形态
-    expect(row!.totalLatencyMs).toBe(100000);
+    expect(Number(row!.totalLatencyMs)).toBe(100000);
     expect(row!.endTime!.getTime() - row!.startTime.getTime()).toBe(3000);
 
     // ① 列表 API：不派生 durationMs；start/end/Σ 三字段齐全供客户端自算墙钟；

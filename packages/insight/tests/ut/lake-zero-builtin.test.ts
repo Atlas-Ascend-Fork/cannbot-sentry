@@ -1,9 +1,9 @@
 // Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
-// This program is free software, you can redistribute it and/or modify it under the terms and
-// conditions of the CANN Open Software License Agreement Version 2.0 (the "License").
+// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+// CANN Open Software License Agreement Version 2.0 (the "License").
 // Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
-// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT OF MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
 // 零内置凭据防回潮锁（跨包扫描，自 cpx 侧迁移而来）：cpx 与 insight 全量
@@ -13,10 +13,13 @@ import { describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const ROOTS = [
-  path.resolve(__dirname, '../../../cpx/src'),
-  path.resolve(__dirname, '../../src'),
-];
+// 布局自适应：本包根在 monorepo 布局下是 packages/insight，产品独立部署时是部署目录根。
+// cpx 姊妹包仅 monorepo 布局存在——cpx 目录缺失时（独立部署 insight 的环境）
+// 跳过该侧扫描（cpx 包由其自身的哨兵把守），不误伤独立部署布局。
+const INSIGHT_ROOT = path.resolve(__dirname, '../..');
+const CPX_ROOT = path.resolve(__dirname, '../../../cpx/src');
+const ROOTS = [fs.existsSync(CPX_ROOT) ? CPX_ROOT : null, path.resolve(INSIGHT_ROOT, 'src')]
+  .filter((x): x is string => x != null);
 
 describe('跨包源码零内置凭据（防回潮锁）', () => {
   it('cpx/insight 源码不得出现密文常量或内嵌凭据 URL', () => {
@@ -32,7 +35,7 @@ describe('跨包源码零内置凭据（防回潮锁）', () => {
         if (!/\.(ts|tsx|mjs|js)$/.test(e.name)) continue;
         const src = fs.readFileSync(full, 'utf8');
         for (const [name, re] of [['encoded-const', encodedConst], ['base64-blob', base64Blob], ['embedded-creds', embeddedCreds]] as const) {
-          if (re.test(src)) offenders.push(`${path.relative(path.resolve(__dirname, '../../..'), full)}: ${name}`);
+          if (re.test(src)) offenders.push(`${rel(full)}: ${name}`);
         }
       }
     };
@@ -52,12 +55,14 @@ describe('平台中性哨兵（平台化 P1-P3 防回潮锁，词表源 sensitiv
     'atomgit', 'TTELab', 'guanxinghua', 'cann_corpus', 'trace_corpus',
     'CANNBAY2_', 'cannbay-lake', 'cannbay2', 'x_cannbay',
   ];
+  // 路径键统一按「本包根相对 + 正斜杠」规范化（两种布局同键）；cpx 侧键
+  // 由 rel() 归一为 cpx/ 前缀。
   const BRAND_NAME_FILES = new Set([
-    'insight/src/lib/branding.ts',
-    'insight/scripts/pack-cannbot.mjs',
-    'insight/tests/e2e/cannbot-pack.test.ts',
+    'src/lib/branding.ts',
+    'scripts/pack-cannbot.mjs',
+    'tests/pipeline/cannbot-pack.test.ts',
   ]);
-  const LEGACY_ENVELOPE_HOME = new Set(['insight/src/lib/shared/envelope.ts', 'cpx/src/envelope.ts']);
+  const LEGACY_ENVELOPE_HOME = new Set(['src/lib/shared/envelope.ts', 'cpx/src/envelope.ts']);
   // 品牌名白名单文件内 CANNbay/CANNBay 合法（branding 字面量/翻转规则/探针）
   const BRAND_FORMS = /CANNBay|CANNbay/;
 
@@ -93,6 +98,7 @@ describe('平台中性哨兵（平台化 P1-P3 防回潮锁，词表源 sensitiv
   });
 
   it('cpx 信封写点单轨（x_cannbay 写点 = 旧键退役轨回潮，v0.2.41 起只写 x_lake）', () => {
+    if (!fs.existsSync(CPX_ROOT)) return; // 独立部署布局：无 cpx 姊妹包，本项由 cpx 包自守
     const offenders: string[] = [];
     const walk = (dir: string): void => {
       for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -105,11 +111,14 @@ describe('平台中性哨兵（平台化 P1-P3 防回潮锁，词表源 sensitiv
         });
       }
     };
-    walk(ROOTS[0]);
+    walk(CPX_ROOT);
     expect(offenders, `cpx 信封写点回潮旧键（信封一律走 x_lake，旧键已退役）:\n${offenders.join('\n')}`).toEqual([]);
   });
 });
 
 function rel(full: string): string {
-  return path.relative(path.resolve(__dirname, '../../..'), full);
+  // 规范化为相对本包根的正斜杠路径（monorepo/独立部署两种布局产出同一键）；
+  // cpx 侧路径归一掉 ../cpx/ 前导，保持 cpx/src/... 形态
+  const r = path.relative(INSIGHT_ROOT, full).replace(/\\/g, '/');
+  return r.startsWith('../cpx/') ? r.slice(3) : r;
 }

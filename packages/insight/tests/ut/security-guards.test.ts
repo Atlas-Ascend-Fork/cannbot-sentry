@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
-// This program is free software: you can redistribute it and/or modify it under the terms and conditions of
+// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
 // CANN Open Software License Agreement Version 2.0 (the "License").
 // Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
@@ -7,7 +7,7 @@
 // See LICENSE in the root of the software repository for the full text of the License.
 
 // 安全修复 IT（0000026/0000050/0000088/0000143/0000147 等）：
-// taskId 白名单（export-session / exportSession / audit-session-py）、
+// taskId 白名单（export-session / exportSession）、
 // lake filenames 遍历拒绝。按信任边界判定：外部威胁在文件内容侧
 // （taskId/filenames 已在落地 sink 封堵）；导入/浏览路径为本地自用功能，
 // 刻意不设白名单。API 层走完整 POST 数据流，mock prisma 与

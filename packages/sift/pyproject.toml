@@ -8,7 +8,9 @@ version = "2.6.0"
 description = "Automated evaluation tool for Claude Code Skills"
 requires-python = ">=3.10"
 dependencies = [
-    "typer>=0.9",
+    # typer 0.28 起移除了 typer.main.get_click_param（sift.cli.options 依赖的
+    # 私有 API），上界锁定到 0.27.x 已实测可用的版本线
+    "typer>=0.9,<0.28",
     "rich>=13",
     "pydantic>=2.0",
     "pyyaml>=6.0",

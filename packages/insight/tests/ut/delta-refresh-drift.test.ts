@@ -1,9 +1,9 @@
 // Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
-// This program is free software, you can redistribute it and/or modify it under the terms of
+// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
 // CANN Open Software License Agreement Version 2.0 (the "License").
-// Please refer to the License for details. You should not use this file except in compliance with the License.
+// Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
-// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT OF MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE,
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
 // 增量刷新漂移检测 IT（现场回归锁：opencode 升级引入 step 部件 → 旧消息
@@ -228,10 +228,10 @@ describe('opencode 标题作 Query（title 优先决议）', () => {
 
   it('小模型生成的标题直接作 Query（任务通知不掺和）', async () => {
     await prisma.session.deleteMany({ where: { taskId: TITLE_TASK } }).catch(() => {});
-    writeTitleDb('ConfusionMulGrad Acme C 算子开发');
+    writeTitleDb('ConfusionMulGrad Ascend C 算子开发');
     await importSession(TITLE_DB, TITLE_TASK, prisma, TITLE_DB, 'opencode-db');
     const s = await prisma.session.findFirstOrThrow({ where: { taskId: TITLE_TASK } });
-    expect(s.query).toBe('ConfusionMulGrad Acme C 算子开发');
+    expect(s.query).toBe('ConfusionMulGrad Ascend C 算子开发');
   });
 
   it('缺省占位标题（New session - …）回落：任务通知跳过、取真人输入', async () => {
@@ -244,14 +244,14 @@ describe('opencode 标题作 Query（title 优先决议）', () => {
 
   it('delta 刷新（快路径回写）同样保持标题决议', async () => {
     await prisma.session.deleteMany({ where: { taskId: TITLE_TASK } });
-    writeTitleDb('ConfusionMulGrad Acme C 算子开发');
+    writeTitleDb('ConfusionMulGrad Ascend C 算子开发');
     await importSession(TITLE_DB, TITLE_TASK, prisma, TITLE_DB, 'opencode-db');
     // 手动污染 query（模拟旧版残留），刷新后应回到标题
     const s = await prisma.session.findFirstOrThrow({ where: { taskId: TITLE_TASK } });
     await prisma.session.update({ where: { id: s.id }, data: { query: '<task id="x" state="completed">旧残留</task>' } });
     await deltaRefreshSession(TITLE_TASK, prisma);
     const after = await prisma.session.findFirstOrThrow({ where: { taskId: TITLE_TASK } });
-    expect(after.query).toBe('ConfusionMulGrad Acme C 算子开发');
+    expect(after.query).toBe('ConfusionMulGrad Ascend C 算子开发');
   });
 
   afterAll(async () => {

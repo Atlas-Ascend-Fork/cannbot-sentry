@@ -1,16 +1,19 @@
 // Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
 // This program is free software, you can redistribute it and/or modify it under the terms and conditions of
 // CANN Open Software License Agreement Version 2.0 (the "License").
-// Please refer to the License for details. You should not use this file except in compliance with the License.
+// Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
-// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT OF MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
 import { beforeAll, afterAll } from "vitest";
 import { PrismaClient } from "@prisma/client";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { isEnvFileLeakedUrl } from "./db-env-guard";
+// BigInt JSON 垫片：roll-up BigInt 列配套，测试进程内全局生效（见 src/lib/bigint-json.ts）
+import "../src/lib/bigint-json";
 
 // 测试库隔离默认值：测试一律写独立 prisma/test.db（pretest 每次重建）。真实
 // prisma/dev.db 由常驻 server 独占——夹具会话从物理上不可能再泄进用户数据
@@ -26,6 +29,13 @@ if (isEnvFileLeakedUrl(process.env.DATABASE_URL, path.resolve(__dirname, "..")))
   delete process.env.DATABASE_URL;
 }
 process.env.DATABASE_URL ||= "file:./test.db";
+
+// 回收站/数据主目录测试隔离默认值：级联删除现在会归档快照（见
+// src/lib/recycle.ts）——不设此默认，任何删除类 IT 都会把快照写进真实
+// ~/.context-insight。每进程独立 tmp（setup 随 worker 进程各跑一次），
+// 并行文件间零共享态；显式 CONTEXT_INSIGHT_HOME（run-store 系 IT 已自带
+// tmpHome）优先于本默认
+process.env.CONTEXT_INSIGHT_HOME ||= fs.mkdtempSync(path.join(os.tmpdir(), 'insight-test-home-'));
 
 // 兜底守卫：绕过 pretest 的直接 vitest（`npx vitest run <file>`）在 test.db
 // 尚不存在（fresh clone 首跑）时，SQLite 会建出无表空库、用例期才炸出难懂

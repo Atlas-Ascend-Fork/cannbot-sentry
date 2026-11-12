@@ -47,6 +47,7 @@
                 <!--filteritem type="filepath" name="projectroot/[a-zA-Z0-9]{20,}.sh" desc="Temp files"/-->
             </filefilter>
             <filefilter name="licenseFileNamePolicyFilter" desc="Filters for LICENSE file policies">
+                <filteritem type="filename" name="*.jsonl" desc="JSON Lines data files, cannot carry license header"/>
                 <filteritem type="filename" name="*.yaml" desc="YAML configuration files, no license header required"/>
                 <filteritem type="filename" name="*.yml" desc="YAML configuration files, no license header required"/>
                 <filteritem type="filename" name="*.csv" desc="CSV test case files, no license header required"/>

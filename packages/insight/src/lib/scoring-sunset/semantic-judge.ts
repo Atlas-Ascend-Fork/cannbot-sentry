@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
-// This program is free software: you can redistribute it and/or modify it under the terms and conditions of
+// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
 // CANN Open Software License Agreement Version 2.0 (the "License").
 // Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
@@ -187,7 +187,7 @@ export async function runSemanticJudge(
   });
 
   const turnDigest = buildTurnDigest(turns.map(t => ({ ...t, createdAt_ts: t.createdAt_ts ? t.createdAt_ts.toISOString() : null })));
-  const bridgeDigest = buildBridgeDigest(bridges.map(b => ({ ...b, dispatchTimestamp: b.dispatchTimestamp ? b.dispatchTimestamp.toISOString() : null })));
+  const bridgeDigest = buildBridgeDigest(bridges.map(b => ({ ...b, dispatchTimestamp: b.dispatchTimestamp ? b.dispatchTimestamp.toISOString() : null, subagentTokens: Number(b.subagentTokens), subagentLatencyMs: Number(b.subagentLatencyMs) })));
   const system = buildSemanticSystemPrompt();
   const user = buildSemanticUserPrompt(turnDigest, bridgeDigest);
 

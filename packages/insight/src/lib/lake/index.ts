@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
-// This program is free software: you can redistribute it and/or modify it under the terms and conditions of
+// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
 // CANN Open Software License Agreement Version 2.0 (the "License").
 // Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
@@ -21,7 +21,6 @@ import { requirePushCredentials } from './auth';
 import { parseSubmitInfo, extractSubmitter, type SessionSubmitInfo } from './notes';
 import { governText, GovernanceError, MAX_SESSION_BYTES } from './governance';
 import { exportSessionToClaudeJsonl, xLake } from './export';
-import { BUNDLE_ROOT_DIR } from './bundle-layout';
 import { readEnvelope, readEnvelopeWithLegacy, envelopeFields } from '../shared/envelope';
 import { readCaptureText, ensure7z, compressCaptureFile, decompressToPlain } from '@/lib/compression';
 import { importSession } from '@/lib/ingest/data-service';
@@ -387,14 +386,12 @@ function governStagedSession(stagingDir: string, sid: string): void {
 // 提交约定（mirror.parseCommitSubject 消费）：`提交人:<姓名> 内容描述:<描述>`。
 // extractSubmitter 实现挪至 notes.ts（会话与 bundle 上传共用），此处经导入使用。
 
-// 范式目录网关（与提交人同级强制）：显式给 category 时必须是数据仓现存
-// 顶层目录（动态白名单，防 typo 凭空造目录）。范式注册表 = 数据仓顶层
-// 目录，insight 零范式知识（sessions/ 存量区特判已退役——普通目录同待遇）。
-function validateCategory(remote: LakeRemote, category?: string): string | undefined {
+// 范式目录网关（与提交人同级强制，会话/bundle 上传共用）：显式给 category
+// 时必须是数据仓现存顶层目录（动态白名单，防 typo 凭空造目录）。范式注册表
+// = 数据仓顶层目录，insight 零范式知识（sessions/ 存量区特判已退役——普通
+// 目录同待遇；统一布局下会话与 bundle 都可上传至任意顶层目录）。
+export function validateCategory(remote: LakeRemote, category?: string): string | undefined {
   const value = category?.trim() || undefined;
-  // bundle 专区不是会话范式：会话上传禁止落入（bundle 目录由 bundle 通道
-  // 原子管理，混入的会话目录列表不可见、永无法清理）
-  if (value === BUNDLE_ROOT_DIR) throw new Error(`"${BUNDLE_ROOT_DIR}" 是 bundle 专区，不能作为会话上传目录`);
   // category 缺省落上传缺省目录（rootDir；''=仓库根根级位）
   if (value) {
     if (!/^[\w.-]+$/.test(value)) throw new Error(`Invalid paradigm dir: "${value.slice(0, 40)}"`);
@@ -458,7 +455,10 @@ async function annotateSessionMeta(
       );
       if (split != null) xb.data.activeMs = split.activeMs;
     } catch { /* turns 查询失败：跳过 activeMs，不阻断上传 */ }
-    if (Number.isFinite(session.totalTokens)) xb.data.totalTokens = session.totalTokens;
+    // roll-up 列已升 BigInt（读出 bigint）：Number.isFinite 只认 number，
+    // 直接套 bigint 恒 false → 字段被静默丢弃（lake e2e 捕获）。先转再验。
+    const totalTokensNum = Number(session.totalTokens);
+    if (Number.isFinite(totalTokensNum)) xb.data.totalTokens = totalTokensNum;
     if (typeof session.model === 'string' && session.model) xb.data.model = session.model;
     // 双名对称写回（setOpGen 同款）：此前仅胜出键被更新，另一键留旧值
     Object.assign(meta, envelopeFields(xb));
@@ -596,6 +596,8 @@ async function uploadNativeCounterpart(
     let nativeTaskId: string;
     let nativeFramework: string;
     if (resolution.origin === 'disk') {
+      // 磁盘命中先导入（幂等 merge）：行身份以导入结果为准（源描述符决定
+      // framework），不假设与捕获行的 agent 框架一致
       const imported = await importSession(resolution.hit.path, resolution.hit.sessionId, prisma, resolution.hit.path, resolution.hit.sourceType);
       // 同 sid 下捕获行（-proxy）与原生行共存（@@unique([taskId, framework])），
       // 按裸 taskId 回查会因字典序取错行（如 cannbot-proxy < opencode 取回捕获行），

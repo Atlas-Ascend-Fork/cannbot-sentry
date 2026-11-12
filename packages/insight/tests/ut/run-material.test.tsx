@@ -1,9 +1,9 @@
 // Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
-// This program is free software: you can redistribute it and/or modify it under the terms and conditions of
+// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
 // CANN Open Software License Agreement Version 2.0 (the "License").
-// You may refer to the License for details. You should not use this file except in compliance with the License.
+// Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
-// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
 // @vitest-environment happy-dom
@@ -203,6 +203,9 @@ describe('P3 材质：样式契约（globals.css 单点）', () => {
   it('微交互：spring 缓动 + 按压 scale(0.98) + 滚动边缘 mask 渐隐', () => {
     expect(css).toMatch(/--run-spring:\s*cubic-bezier\(0\.32,\s*0\.72,\s*0,\s*1\)/)
     expect(css).toMatch(/\.run-tool-btn:active\s*{[^}]*transform:\s*scale\(0\.98\)/)
-    expect(css).toMatch(/\.run-scroll-fade\s*{[^}]*mask-image:\s*linear-gradient/)
+    // 滚动感知：mask 只挂在 data-fade 变体上（静止 none 无晕染；基类无
+    // 无条件 mask）
+    expect(css).toMatch(/\.run-scroll-fade\[data-fade="top-bottom"\]\s*{[^}]*mask-image:\s*linear-gradient/)
+    expect(css).not.toMatch(/\.run-scroll-fade\s*{[^}]*mask-image/)
   })
 })

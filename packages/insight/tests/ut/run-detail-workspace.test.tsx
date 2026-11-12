@@ -1,7 +1,7 @@
 // Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
-// This program is free software: you can redistribute it and/or modify it under the terms and conditions of
+// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
 // CANN Open Software License Agreement Version 2.0 (the "License").
-// You may refer to the License for details. You should not use this file except in compliance with the License.
+// Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
@@ -13,7 +13,8 @@
 // 子图为弹窗不占顶层视图）；② 节点点击后侧栏切换为运行历史；③ 概览统计与
 // 代际信息来自真实数据；④ 画布缩放（工具条按钮 + Ctrl 滚轮）与跑马灯按需
 // 点亮（选中节点 → 关联边状态色加粗 + 白色蚂蚁线，点击空白熄灭）；另设
-// 确定性几何拓扑锁 PCB 交叉跳线、回滚 fixture 锁子图弹窗（代际切换）。
+// 确定性几何拓扑锁 PCB 交叉跳线、回滚 fixture 锁子图弹窗（代际切换）、
+// 返回栈锁（tab 切换逐步回退，栈空离页兜底恰一次）。
 
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { createElement } from 'react';
@@ -23,6 +24,9 @@ import { act } from 'react';
 import fs from 'node:fs';
 import path from 'node:path';
 import RunDetailPage from '@/app/run/[runId]/page';
+import { RunOfflineHostCapsProvider } from '@/lib/run/host-caps';
+import { createOfflineFetch, type OfflineMemberTurns } from '@/export-view/offline-kernel';
+import { urlKeyOf } from '@/lib/observe/export-html';
 import { parseAndIndex } from '@/lib/run/reader';
 import { buildViewModel } from '@/lib/run/view-model';
 import { attachSessionRefs } from '@/lib/run/session-link';
@@ -33,10 +37,13 @@ import type { RunImportMeta } from '@/lib/run/run-store';
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
+const nav = vi.hoisted(() => ({ back: vi.fn(), replace: vi.fn(), push: vi.fn() }))
+// useSearchParams 读可变 search：用例可深链 ?tab=graph（run-view URL 镜像）
+const searchState = vi.hoisted(() => ({ current: '' }))
 vi.mock('next/navigation', () => ({
-  useRouter: () => ({ push: () => {}, replace: () => {}, back: () => {}, refresh: () => {} }),
+  useRouter: () => ({ push: nav.push, replace: nav.replace, back: nav.back, refresh: () => {} }),
   usePathname: () => '/run/minidemo01',
-  useSearchParams: () => new URLSearchParams(''),
+  useSearchParams: () => new URLSearchParams(searchState.current),
 }))
 
 const fixture = JSON.parse(
@@ -44,6 +51,16 @@ const fixture = JSON.parse(
 ) as unknown;
 const index = parseAndIndex(fixture);
 const viewModel = buildViewModel(index);
+// 成员引用挂接（Overview 成员表数据源）：ses_mini_a 一行 join（build g0 execute）
+attachSessionRefs(viewModel, new Map([
+  ['ses_mini_a', {
+    taskId: 'ses_mini_a', framework: 'opencode', rowId: 'row_a', turns: 7,
+    totalTokens: 2300, durationMs: 60000, label: null,
+    startTime: '2026-10-13T02:00:12.000Z', endTime: '2026-10-13T02:01:12.000Z',
+    cacheReadTokens: 0, contextPeakPct: 72.5, model: 'volc-gateway/glm-4.7',
+    totalCost: 0.2, version: null, totalLatencyMs: 60000,
+  }],
+]));
 const importMeta: RunImportMeta['data'] = {
   importedAt: '2026-10-15T10:00:00+08:00',
   sourceDir: '/bundle/mini',
@@ -64,6 +81,22 @@ const responseBody = {
     import: importMeta,
   },
   viewModel,
+  memberStats: {
+    joinedCount: 1,
+    totalTokens: 2300,
+    totalCost: 0.2,
+    totalTurns: 7,
+    totalActiveMs: 1_110_000,
+    totalDurationMs: 7_440_000,
+    memberRowIds: ['row_a'],
+    models: [{ model: 'glm-4.7', count: 1 }],
+    earliestStart: '2026-10-13T02:00:12.000Z',
+    latestEnd: '2026-10-13T02:01:12.000Z',
+  },
+  totalErrors: 2,
+  members: [
+    { taskId: 'ses_mini_a', framework: 'opencode', version: null, label: 'build 执行' },
+  ],
 };
 
 vi.stubGlobal('fetch', vi.fn(async () => ({
@@ -73,7 +106,24 @@ vi.stubGlobal('fetch', vi.fn(async () => ({
 
 let root: Root | null = null
 
-async function renderPage() {
+// history.pushState 间谍（条目栈 URL 镜像断言锚）：懒建 + renderPage 复位。
+// 调用形态 (state, unused, url)——url 断言取第三参
+let pushSpy: ReturnType<typeof vi.spyOn> | null = null
+function ensurePushSpy() {
+  if (!pushSpy) pushSpy = vi.spyOn(window.history, 'pushState')
+  return pushSpy
+}
+
+async function renderPage(initialSearch = '') {
+  searchState.current = initialSearch
+  // history 条目栈测试基建：重置当前条目 state（happy-dom 的 Window 在文件
+  // 内共享——上一用例的 runNavSeq/runView 标残留会让 mount 盖标跳过、goBack
+  // 误判有栈）+ pushState 间谍作 URL 镜像断言锚（happy-dom 的 pushState 不
+  // 更新 location，URL 断言走调用记录）。受限宿主用例（replaceState 抛错）
+  // 下重置跳过
+  try { window.history.replaceState(null, '', `/run/minidemo01${initialSearch}`) } catch { /* 受限宿主：跳过 */ }
+  ensurePushSpy().mockClear()
+  nav.replace.mockClear()
   const container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
@@ -99,6 +149,53 @@ function clickNode(labelPart: string) {
   node!.dispatchEvent(new MouseEvent('click', { bubbles: true }))
 }
 
+/** 离线宿主渲染：离线内核（静态档案 = 本文件 fixture 的 run 详情 + 空成员
+ *  富轮仓）+ offline caps provider——模拟导出 HTML 里挂载的真实工作台 */
+async function renderOfflinePage() {
+  const archive = { [urlKeyOf('/api/observe/run/minidemo01')]: responseBody };
+  const members: OfflineMemberTurns[] = [
+    { member: { taskId: 'ses_mini_a', label: 'build 执行' }, sessionId: 'ses_mini_a', framework: 'opencode', items: [] },
+  ];
+  const orig = vi.fn(async () => new Response('x'));
+  const offlineFetch = createOfflineFetch(members, archive, 'minidemo01', orig as unknown as typeof fetch);
+  const prevFetch = (globalThis as unknown as { fetch: unknown }).fetch;
+  vi.stubGlobal('fetch', offlineFetch);
+  try {
+    searchState.current = ''
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    root = createRoot(container)
+    await act(async () => {
+      root!.render(
+        createElement(
+          Suspense,
+          { fallback: null },
+          createElement(
+            RunOfflineHostCapsProvider,
+            null,
+            createElement(RunDetailPage, { params: Promise.resolve({ runId: 'minidemo01' }) }),
+          ),
+        ),
+      )
+    })
+    await act(async () => {
+      await new Promise(r => setTimeout(r, 0))
+    })
+    const body = document.body.textContent ?? ''
+    // 离线宿主：服务端协作动作全隐藏（刷新/导出/上传），工作台数据照常渲染
+    expect(document.querySelector('button[title="立即刷新"]')).toBeNull()
+    expect(document.querySelector('button[title="导出 Markdown"]')).toBeNull()
+    expect(document.querySelector('button[title="导出离线 HTML"]')).toBeNull()
+    expect([...document.querySelectorAll('button')].find(b => b.textContent?.includes('上传到'))).toBeUndefined()
+    expect(body).toContain('Context')
+    expect(body).toContain('minidemo01')
+    // 详情经内核静态档案应答（非原 fetch 直通）
+    expect(orig).not.toHaveBeenCalled()
+  } finally {
+    vi.stubGlobal('fetch', prevFetch)
+  }
+}
+
 afterEach(() => {
   act(() => root?.unmount())
   root = null
@@ -106,21 +203,223 @@ afterEach(() => {
 })
 
 describe('Run 详情页暗色工作台', () => {
-  it('工作台结构：视图标题、图例、Run 概览侧栏（子图为弹窗，不占顶层视图）', async () => {
+  it('Overview 默认 tab：总览头（身份 + Σ指标瓦片）+ 结构/导入卡；Graph 切换走 URL 镜像', async () => {
     await renderPage()
 
+    // 默认 Overview（无 tab 参数回落）；Graph 挂载但隐藏（hidden 切换保状态）
+    const overview = document.querySelector('[data-run-tab="overview"]')
+    const graph = document.querySelector('[data-run-tab="graph"]')
+    expect(overview).toBeTruthy()
+    expect(graph).toBeTruthy()
+    expect(graph!.classList.contains('hidden')).toBe(true)
     expect(document.querySelector('.run-canvas')).toBeTruthy()
-    // 工具条无视图 tab——主图即工作台，子图经生成器节点入口以弹窗展开
+
+    const ovText = overview!.textContent ?? ''
+    // 统一总览（run-first）：总览头 = 身份 + Σ指标大瓦片（memberStats +
+    // totalErrors → 瓦片值；泳道/轮次面板取数失败时空态降级，不阻塞框架区块）
+    expect(ovText).toContain('OpenCode')
+    expect(ovText).toContain('glm-4.7')
+    expect(ovText).toContain('2.3k')
+    expect(ovText).toContain('$0.20')
+    expect(ovText).toContain('2.1h')
+    expect(ovText).toContain('活跃 0.3h')
+    expect(ovText).toContain('⚠ Errors')
+    // 成员维度不在 Overview 摆表（泳道分道 + Members 徽标承载；逐成员指标属 Turns tab）
+    expect(ovText).not.toContain('成员会话')
+    // 结构卡 / 导入信息卡
+    expect(ovText).toContain('执行结构')
+    expect(ovText).toContain('第 1 次运行')
+    expect(ovText).toContain('导入信息')
+
+    // 切 Graph：navigate 单点入条目栈（真实 history 条目——URL 镜像随
+    // pushState 走、视图态随条目 state 走），两个 tab 容器 hidden 互换（均保持挂载）
+    const graphTab = [...document.querySelectorAll('button')].find(b => b.textContent?.includes('Graph'))
+    expect(graphTab).toBeTruthy()
+    await act(async () => {
+      graphTab!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    })
+    expect(ensurePushSpy().mock.calls.some(([, , url]) => url === '?tab=graph')).toBe(true)
+    expect((window.history.state as { runView?: { tab?: string } })?.runView?.tab).toBe('graph')
+    expect(overview!.classList.contains('hidden')).toBe(true)
+    expect(graph!.classList.contains('hidden')).toBe(false)
+  });
+
+  it('返回栈：tab 切换逐步回退上一个工作台动作（Score→Files→返回→Files→返回→Overview），栈空离页兜底恰一次', async () => {
+    // Files 面板取数单独兜底（其余端点沿用 responseBody 通用 mock）
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.includes('/file-reads')) return { ok: true, json: async () => ({ files: [] }) }
+      return { ok: true, json: async () => responseBody }
+    }))
+    try {
+      await renderPage()
+      const tabBtn = (label: string) =>
+        [...document.querySelectorAll('button')].find(b => b.textContent === label) as HTMLButtonElement
+      const backBtn = () => document.querySelector('button[title="返回上一步"]') as HTMLButtonElement
+      const visibleTab = (key: string) =>
+        document.querySelector(`[data-run-tab="${key}"]`)?.className ?? ''
+
+      // Score → Files：两个动作依次入条目栈（真实 history 条目）
+      await act(async () => { tabBtn('Files').click() })
+      expect(visibleTab('files')).toContain('flex')
+      await act(async () => { tabBtn('Score').click() })
+      expect(visibleTab('score')).toContain('flex')
+      expect(visibleTab('files')).toContain('hidden')
+      expect((window.history.state as { runNavSeq?: number })?.runNavSeq).toBe(2)
+
+      // 返回 → Files（上一个动作）：history.back → popstate 按条目 state
+      // 的 runView 恢复（与鼠标侧键同一出口）
+      await act(async () => { backBtn().click() })
+      expect(visibleTab('files')).toContain('flex')
+      expect(visibleTab('score')).toContain('hidden')
+      expect((window.history.state as { runView?: { tab?: string } })?.runView?.tab).toBe('files')
+
+      // 再返回 → Overview（初始条目，栈逐步退空）
+      await act(async () => { backBtn().click() })
+      expect(visibleTab('overview')).toContain('flex')
+      expect((window.history.state as { runView?: { tab?: string } })?.runView?.tab).toBe('overview')
+      expect((window.history.state as { runNavSeq?: number })?.runNavSeq).toBe(0)
+
+      // 栈空 → 离页兜底恰一次（回上页或首页，二者恰一）
+      nav.back.mockClear()
+      nav.push.mockClear()
+      await act(async () => { backBtn().click() })
+      expect(nav.back.mock.calls.length + nav.push.mock.calls.length).toBe(1)
+    } finally {
+      vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => responseBody })))
+    }
+  });
+
+  it('鼠标侧键后退语义：浏览器历史条目承载工作台动作——popstate 逐步回退、前进键重放、chrome 返回钮同出口', async () => {
+    // Files 面板取数单独兜底（其余端点沿用 responseBody 通用 mock）
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.includes('/file-reads')) return { ok: true, json: async () => ({ files: [] }) }
+      return { ok: true, json: async () => responseBody }
+    }))
+    try {
+      await renderPage()
+      const tabBtn = (label: string) =>
+        [...document.querySelectorAll('button')].find(b => b.textContent === label) as HTMLButtonElement
+      const visibleTab = (key: string) =>
+        document.querySelector(`[data-run-tab="${key}"]`)?.className ?? ''
+      // 返回钮残影双 chevron：第二个 path 的 opacity 属性是 canBack 的镜像
+      const ghostOpacity = () =>
+        document.querySelectorAll('button[title="返回上一步"] svg path')[1]?.getAttribute('opacity')
+
+      // 两个动作入条目栈（每个工作台动作 = 真实 history 条目，视图态随条目 state 走）
+      await act(async () => { tabBtn('Files').click() })
+      await act(async () => { tabBtn('Score').click() })
+      expect(visibleTab('score')).toContain('flex')
+      expect(ghostOpacity()).toBe('0.32')
+
+      // 鼠标侧键后退 = history.back + popstate → 回退上一个工作台动作（Files）
+      //（此前侧键直接离页：router.replace 单条目下浏览器历史里没有工作台条目）
+      await act(async () => { window.history.back() })
+      expect(visibleTab('files')).toContain('flex')
+      expect(visibleTab('score')).toContain('hidden')
+      expect((window.history.state as { runView?: { tab?: string } })?.runView?.tab).toBe('files')
+      expect(ghostOpacity()).toBe('0.32')
+
+      // 再退 → 初始条目（Overview），可达性归零、残影熄灭
+      await act(async () => { window.history.back() })
+      expect(visibleTab('overview')).toContain('flex')
+      expect((window.history.state as { runNavSeq?: number })?.runNavSeq).toBe(0)
+      expect(ghostOpacity()).toBe('0')
+
+      // 前进键重放（此前内存栈无前进概念——真实历史条目天然支持）
+      await act(async () => { window.history.forward() })
+      expect(visibleTab('files')).toContain('flex')
+      expect(ghostOpacity()).toBe('0.32')
+
+      // chrome 返回钮与侧键同一出口（goBack = history.back，popstate 恢复）
+      await act(async () => {
+        (document.querySelector('button[title="返回上一步"]') as HTMLButtonElement).click()
+      })
+      expect(visibleTab('overview')).toContain('flex')
+      expect((window.history.state as { runNavSeq?: number })?.runNavSeq).toBe(0)
+    } finally {
+      vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => responseBody })))
+    }
+  });
+
+  it('离线导出降级：history 抛 SecurityError（file:// 宿主）→ 内存栈承载回退，返回语义与历史模式同构', async () => {
+    // 模拟受限宿主：replaceState/pushState 对 file:// origin null 抛
+    // SecurityError（Chrome 行为）——mount 探测即落空，本页降级内存栈。
+    // 前置清当前条目标：上一用例可能已盖 runNavSeq，而 mount 盖标有「已带
+    // 标则跳过」守卫——带标宿主不触碰 replaceState，降级探测永不触发
+    window.history.replaceState(null, '', '/run/minidemo01')
+    const pushStub = ensurePushSpy();
+    pushStub.mockImplementation(() => { throw new Error('SecurityError: file:// origin') });
+    const replaceStub = vi.spyOn(window.history, 'replaceState').mockImplementation(() => {
+      throw new Error('SecurityError: file:// origin');
+    });
+    // Files 面板取数单独兜底（其余端点沿用 responseBody 通用 mock）
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = typeof input === 'string' ? input : input.toString()
+      if (url.includes('/file-reads')) return { ok: true, json: async () => ({ files: [] }) }
+      return { ok: true, json: async () => responseBody }
+    }));
+    try {
+      await renderPage()
+      const tabBtn = (label: string) =>
+        [...document.querySelectorAll('button')].find(b => b.textContent === label) as HTMLButtonElement
+      const backBtn = () => document.querySelector('button[title="返回上一步"]') as HTMLButtonElement
+      const visibleTab = (key: string) =>
+        document.querySelector(`[data-run-tab="${key}"]`)?.className ?? ''
+
+      // 两个动作入内存栈（pushState 从未被调——mount 探测在 replaceState 就落空）
+      await act(async () => { tabBtn('Files').click() })
+      expect(visibleTab('files')).toContain('flex')
+      await act(async () => { tabBtn('Score').click() })
+      expect(visibleTab('score')).toContain('flex')
+      expect(pushStub.mock.calls.length).toBe(0)
+
+      // 返回 → Files（内存栈弹出恢复）→ 再返回 → Overview，语义与历史模式同构
+      await act(async () => { backBtn().click() })
+      expect(visibleTab('files')).toContain('flex')
+      expect(visibleTab('score')).toContain('hidden')
+      await act(async () => { backBtn().click() })
+      expect(visibleTab('overview')).toContain('flex')
+
+      // 栈空 → 离页兜底恰一次（回上页或首页，二者恰一）
+      nav.back.mockClear()
+      nav.push.mockClear()
+      await act(async () => { backBtn().click() })
+      expect(nav.back.mock.calls.length + nav.push.mock.calls.length).toBe(1)
+    } finally {
+      // mockReset 将 spyOn 间谍恢复原实现（后续用例继续记录真实 pushState）
+      pushStub.mockReset()
+      replaceStub.mockRestore()
+      vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => responseBody })))
+    }
+  });
+
+  it('工作台结构：视图标题、图例、Run 概览侧栏（子图为弹窗，不占顶层视图）', async () => {
+    await renderPage('?tab=graph')
+
+    expect(document.querySelector('.run-canvas')).toBeTruthy()
+    // 页面 tab 栏为普通 button（无 ARIA tab 角色）；工具条模式组同无 role=tab
     expect(document.querySelectorAll('[role="tab"]').length).toBe(0)
     expect(document.body.textContent).toContain('主图（所有代）')
+
+    // 返回钮在导航行（title=返回上一步）：深链直入、工作台内无回退历史 →
+    // 离页兜底（回上页或首页，二者恰一）；回归：此前指向 /?kind=run 会把
+    // 列表过滤成 Run
+    const back = document.querySelector('button[title="返回上一步"]')
+    expect(back).toBeTruthy()
+    nav.back.mockClear()
+    nav.push.mockClear()
+    back!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    expect(nav.back.mock.calls.length + nav.push.mock.calls.length).toBe(1)
 
     const text = document.body.textContent ?? ''
     expect(text).toContain('依赖')
     expect(text).toContain('回滚')
     expect(text).toContain('Run 概览')
     expect(text).toContain('节点')
-    // 页头成员会话计数（导入时口径）：imported 3 / total 3；侧栏不再重复展示
-    expect(text).toContain('成员会话：3/3')
+    // 导入计数（原页头 sessionStats 移入）：导入信息卡给完整分解口径
+    expect(text).toContain('会话：新导入 3 · 已存在 0 · 引用 3')
     expect(text).toContain('第 1 次运行')
 
     // 边渲染：默认全部静止（跑马灯按需点亮——见下个用例），正交走线无三次贝塞尔
@@ -140,7 +439,7 @@ describe('Run 详情页暗色工作台', () => {
   })
 
   it('选中节点点亮关联边跑马灯（状态色加粗 + 白色蚂蚁线），点击空白熄灭', async () => {
-    await renderPage()
+    await renderPage('?tab=graph')
     const main = viewModel.views[0]
     const byKey = new Map(viewModel.nodes.map(n => [n.key, n]))
     const initKey = main.nodeKeys.find(k => byKey.get(k)!.nodeId === 'init')!
@@ -180,7 +479,7 @@ describe('Run 详情页暗色工作台', () => {
   })
 
   it('画布缩放：工具条按钮 / Ctrl+滚轮 / 重置 / 适配', async () => {
-    await renderPage()
+    await renderPage('?tab=graph')
     const zoomLabel = () => document.querySelector('[aria-label="重置缩放"]')!.textContent
     expect(zoomLabel()).toBe('100%')
 
@@ -221,7 +520,7 @@ describe('Run 详情页暗色工作台', () => {
   })
 
   it('相机模型：缩放/平移直改 camera transform 与百分比同步，手势期间挂 run-gesture 暂停动画', async () => {
-    await renderPage()
+    await renderPage('?tab=graph')
     const camera = document.querySelector('.run-camera') as HTMLElement
     const viewport = document.querySelector('.run-viewport') as HTMLElement
     const svg = document.querySelector('.run-canvas svg') as SVGSVGElement
@@ -279,7 +578,7 @@ describe('Run 详情页暗色工作台', () => {
   })
 
   it('点击节点：侧栏从概览切换为运行历史（逐次尝试）', async () => {
-    await renderPage()
+    await renderPage('?tab=graph')
     expect(document.body.textContent).toContain('Run 概览')
 
     await act(async () => {
@@ -294,7 +593,7 @@ describe('Run 详情页暗色工作台', () => {
   })
 
   it('再次点击同一节点：侧栏收起回到概览', async () => {
-    await renderPage()
+    await renderPage('?tab=graph')
     await act(async () => {
       clickNode('build')
     })
@@ -304,6 +603,83 @@ describe('Run 详情页暗色工作台', () => {
       clickNode('build')
     })
     expect(document.body.textContent).toContain('Run 概览')
+  })
+
+  it('加载态外壳：chrome 即时成型（返回/品牌）+ 导航/首卡三区骨架，旧站头退役', async () => {
+    // run 详情端点挂起（未决 Promise）——页面停留加载态
+    const pending = new Promise<Response>(() => {})
+    vi.stubGlobal('fetch', vi.fn(() => pending))
+    try {
+      await renderPage()
+      // chrome 即时成型：返回钮（导航行）+ 品牌区（链接回首页）+ 版本
+      expect(document.querySelector('button[title="返回上一步"]')).toBeTruthy()
+      expect(document.querySelector('a[href="/"]')).toBeTruthy()
+      const body = document.body.textContent ?? ''
+      expect(body).toContain('Context')
+      expect(body).toContain('v1.0')
+      // 无障碍：sr-only 加载提示（role=status）
+      expect(document.querySelector('[role="status"]')?.textContent).toContain('加载 Run')
+      // 骨架贴近落位：导航药丸 + 首卡三区（身份/元信息/瓦片）+ 泳道骨架
+      const pulses = document.querySelectorAll('.animate-pulse')
+      expect(pulses.length).toBeGreaterThan(20)
+      const grids = document.querySelectorAll('.divide-y')
+      expect(grids.length).toBeGreaterThanOrEqual(1)
+      // 旧站头退役：连字品牌名（AppHeader 形态）不再出现在正文
+      expect(body).not.toContain('Context-Insight')
+    } finally {
+      vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => responseBody })))
+    }
+  })
+
+  it('错误态外壳：chrome + 居中错误卡（返回/重试），旧站头退役', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => ({
+      ok: false,
+      status: 404,
+      json: async () => ({ error: 'Run not found: minidemo01' }),
+    })))
+    try {
+      await renderPage()
+      // chrome 可用：品牌区（顶栏不再放返回钮——错误卡自带返回/重试）
+      expect(document.querySelector('a[href="/"]')).toBeTruthy()
+      // 错误卡：错误文案 + 返回/重试
+      const body = document.body.textContent ?? ''
+      expect(body).toContain('Run not found: minidemo01')
+      expect(body).toContain('重试')
+      // 旧站头退役：连字品牌名（AppHeader 形态）不再出现在正文
+      expect(body).not.toContain('Context-Insight')
+    } finally {
+      vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => responseBody })))
+    }
+  })
+
+  it('全局 chrome 单行导航 + Overview 首卡身份：品牌区 + 动作簇在导航栏，run 身份在首卡', async () => {
+    await renderPage()
+    const body = document.body.textContent ?? ''
+    // 导航行：品牌区（渐变标 + 双色字标）+ 版本；无 run 名/runId（身份在首卡）
+    expect(body).toContain('Context')
+    expect(body).toContain('Insight')
+    expect(body).toContain('v1.0')
+    // 品牌区是回工作台首页的链接
+    expect(document.querySelector('a[href="/"]')).toBeTruthy()
+    // Overview 首卡：run 名为标题（h1 + 悬停全名/runId），状态药丸 +
+    // kind 徽标 + runId mono 一处呈现
+    const h1 = document.querySelector('h1') as HTMLElement | null
+    expect(h1).toBeTruthy()
+    expect(h1!.getAttribute('title')).toContain('minidemo01')
+    expect(body).toContain('failed')
+    expect(body).toContain('工作流')
+    expect(body).toContain('minidemo01')
+    // 动作簇：刷新图标钮（title=立即刷新）+ 上传实心药丸；bundle 形态 HTML
+    // 导出全 run 可用（工作台即离线查看器），MD 导出仍 solo 专属
+    expect(document.querySelector('button[title="立即刷新"]')).toBeTruthy()
+    const upload = [...document.querySelectorAll('button')].find(b => b.textContent?.includes('上传到'))
+    expect(upload).toBeTruthy()
+    expect(document.querySelector('button[title="导出 Markdown"]')).toBeNull()
+    expect(document.querySelector('button[title="导出离线 HTML"]')).toBeTruthy()
+  })
+
+  it('离线宿主（导出 HTML 形态）：服务端协作动作全隐藏，工作台经内核档案照常渲染', async () => {
+    await renderOfflinePage()
   })
 })
 
@@ -428,14 +804,15 @@ describe('子图弹窗（gen-sub 三代，回滚 fixture）', () => {
     // 验收类型并入标头（脚本 · 通过），时间行不再为「—」（会话行起止兜底）
     expect((dialog!.textContent ?? '')).toContain('脚本 · 通过');
     expect((dialog!.textContent ?? '')).not.toContain('—');
-    const sessionLink = dialog!.querySelector('a[href^="/session/"]');
-    expect(sessionLink, '子图节点会话入口').toBeTruthy();
-    // 角色词精简（执行/验收）+ 短 id 展示（完整 id 在 title/href 保留全量）
-    expect(sessionLink!.textContent).toContain('执行：S5082A31602EE1');
-    expect(sessionLink!.getAttribute('href')).toContain('S5082A31602EE15ED');
-    expect(sessionLink!.getAttribute('title')).toBe('S5082A31602EE15ED');
-    // 成员行美化：链接 + 右侧用量胶囊（完整数值悬浮）；尝试卡片带耗时徽标
-    const memberRow = sessionLink!.parentElement!;
+    // 成员会话定位入口（原 solo 整页链接退役）：定位按钮 + title 带完整 id
+    const sessionBtn = Array.from(dialog!.querySelectorAll('button'))
+      .find(b => b.getAttribute('title')?.includes('S5082A31602EE15ED')) as HTMLElement | undefined;
+    expect(sessionBtn, '子图节点会话定位入口').toBeTruthy();
+    // 角色词精简（执行/验收）+ 短 id 展示（完整 id 在 title 保留全量）
+    expect(sessionBtn!.textContent).toContain('执行：S5082A31602EE1');
+    expect(sessionBtn!.getAttribute('title')).toContain('在 Turns 时间线定位该会话');
+    // 成员行美化：定位入口 + 右侧用量胶囊（完整数值悬浮）；尝试卡片带耗时徽标
+    const memberRow = sessionBtn!.parentElement!;
     expect(memberRow.textContent).toContain('3 turns · 1.2k');
     expect(memberRow.querySelector('span[title]')?.getAttribute('title')).toBe('3 turns · 1234 tokens');
     expect((dialog!.textContent ?? '')).toContain('5.0s');
@@ -471,7 +848,7 @@ describe('子图弹窗（gen-sub 三代，回滚 fixture）', () => {
     expect(flaky?.querySelector('.run-node-box')?.getAttribute('stroke')).toBe('#cf222e');
 
     // 未选中子图节点时，侧栏为提示文案（无运行历史、无会话链接）
-    expect(dialog.querySelectorAll('a[href^="/session/"]').length).toBe(0);
+    expect(dialog.querySelectorAll('a[href^="/run/solo:"]').length).toBe(0);
     expect((dialog.textContent ?? '')).toContain('点击子图节点查看运行历史');
   });
 
@@ -928,12 +1305,27 @@ describe('系统级观测：指标透镜 + Run Trace 时间轴', () => {
     expect(text).toContain('间隙 4%');
     expect(text).toContain('重试等待 12%');
 
-    // 泳道：build 两代各一条（g0 两次尝试两行，g1 一行）；执行条实心 + 验收条描边（ses_mini_b）
+    // 泳道：build 两代各一条（g0 两次尝试共线一行——顺序重试横向续写，g1 一行）；
+    // 执行条实心 + 验收条描边（ses_mini_b）
     expect(document.querySelectorAll('.trace-lane').length).toBe(2);
+    expect(document.querySelectorAll('.trace-row').length).toBe(2);
     expect(document.querySelectorAll('.trace-bar').length).toBe(4);
     expect(document.querySelectorAll('.trace-bar-verify').length).toBe(1);
     // 派发间隙显影：build g0 执行结束（02:01:00）→ 验收开始（02:01:10）一条点状线
     expect(document.querySelectorAll('.trace-gap').length).toBe(1);
+    // 重试等待显影：g0 第 1 次结束 → 第 2 次开始（30s 等待）一条等待虚线；
+    // 尝试徽标共线后仍在（第1次/第2次区分横向续写的尝试）
+    expect(document.querySelectorAll('.trace-wait').length).toBe(1);
+    const svgText = document.querySelector('.run-trace svg')?.textContent ?? '';
+    expect(svgText).toContain('第1次');
+    expect(svgText).toContain('第2次');
+    // 共线契约：g0 两次尝试的执行条同一行——同 y 基线（第1/第2次徽标所在
+    // rect 的 y 相等，此前按尝试叠行 y 差一个行高）
+    const ordRects = Array.from(document.querySelectorAll<SVGRectElement>('.run-trace svg g.trace-bar rect'))
+      .filter(r => r.getAttribute('height') === '8');
+    expect(ordRects.length).toBe(3);  // g0×2 + g1×1
+    const g0Pair = [0, 1].map(i => ordRects[i].getAttribute('y'));
+    expect(g0Pair[0]).toBe(g0Pair[1]);
 
     // 点击执行条 → 选中节点，侧栏从概览切到运行历史 + 时间四元构成块
     await act(async () => {
@@ -1186,72 +1578,5 @@ describe('失败归因 post-mortem：环境指纹 / 同因连败 / 验收项清�
     expect(text).toContain('通过 1/3');
     expect(text).toContain('边界用例齐全（tests 目录含边界样例）');
     expect(text).toContain('样例无残留（grep 无 AddCustom）');
-  });
-});
-
-describe('无 graph 定位字段空态（导出侧未启用 graph 插件）', () => {
-  /** 递归剥掉全树成员的图定位字段，模拟不带 graph 插件的导出包 */
-  function stripAnnotations(node: { members?: Array<Record<string, unknown>> }): void {
-    for (const m of node.members ?? []) {
-      delete m.nodeId;
-      delete m.generation;
-      delete m.attempt;
-      if (m.data) stripAnnotations(m.data as { members?: Array<Record<string, unknown>> });
-    }
-  }
-
-  async function renderNoGraphPage() {
-    // 在原始 manifest JSON 上剥图定位字段（模拟不带 graph 插件的导出包），
-    // 再走完整解析 → 视图模型管线
-    const raw = structuredClone(fixture) as { data: { members: Array<Record<string, unknown>> } };
-    stripAnnotations(raw.data);
-    const vm2 = buildViewModel(parseAndIndex(raw));
-    vi.stubGlobal('fetch', vi.fn(async () => ({
-      ok: true,
-      json: async () => ({
-        run: {
-          runId: 'minidemo01',
-          name: null,
-          status: vm2.status,
-          exportDataComplete: vm2.exportDataComplete,
-          startedAt: vm2.startedAt,
-          finishedAt: vm2.finishedAt,
-          import: importMeta,
-        },
-        viewModel: vm2,
-      }),
-    })));
-    const container = document.createElement('div');
-    document.body.appendChild(container);
-    root = createRoot(container);
-    await act(async () => {
-      root!.render(
-        createElement(
-          Suspense,
-          { fallback: null },
-          createElement(RunDetailPage, { params: Promise.resolve({ runId: 'minidemo01' }) }),
-        ),
-      );
-    });
-    await act(async () => {
-      await new Promise(r => setTimeout(r, 0));
-    });
-  }
-
-  it('工作台降级为空态引导卡：说明原因与可用信息，隐藏模式切换与画布', async () => {
-    await renderNoGraphPage();
-
-    // 空态卡就地说明（白话），不再是一张静默空画布
-    const text = document.body.textContent ?? '';
-    expect(text).toContain('该 Run 没有图数据');
-    expect(text).toContain('未包含 graph 节点定位字段');
-    expect(text).toContain('Run 概览与成员会话信息仍可在右侧查看');
-    // 画布与模式切换不渲染（三模式均依赖图数据）
-    expect(document.querySelector('.run-canvas')).toBeNull();
-    expect(document.querySelector('[aria-label="视图模式"]')).toBeNull();
-    // 顶部警告条同步给出解释
-    expect(text).toContain('依赖图与代际/重试视图不可用');
-    // 侧栏 Run 概览仍可用
-    expect(text).toContain('Run 概览');
   });
 });

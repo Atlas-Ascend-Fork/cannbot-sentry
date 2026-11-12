@@ -32,8 +32,39 @@ export interface ErrorSummary {
   details: Array<{ toolName: string; type: string }>
 }
 
+/** 轮级错误摘要（服务端预算，Overview 消费）：计数与 details 与
+ *  summarizeToolCallErrors 同源同口径，另带错误消息提取（Exit code /
+ *  <tool_use_error> 截断 60 字符）与技能失败消息——消费方不再需要
+ *  resultJson 原文（18MB 级载荷不进 Overview 响应）。 */
+export interface TurnErrorDigest extends ErrorSummary {
+  messages: Array<{ toolName: string; message: string }>
+  skillMessages: Array<{ skillName: string; message: string }>
+}
+
+/** 工具调用错误消息提取（60 字符内）：Exit code N / <tool_use_error> 正文。
+ *  线上（服务端 digest）与离线导出（客户端原文计算）共用同一实现。 */
+export function toolCallErrorMessage(tc: { resultJson?: string | null }): string {
+  const r = tc.resultJson ?? ''
+  const exitMatch = r.match(/Exit code (\d+)/)
+  return r.includes('<tool_use_error>')
+    ? r.replace(/.*<tool_use_error>/, '').replace(/<\/tool_use_error>.*/, '').substring(0, 60)
+    : exitMatch ? `exit ${exitMatch[1]}` : ''
+}
+
 /** Completion reasons which indicate that the model output was cut short. */
 const TRUNCATED_FINISH_REASONS = new Set(['length', 'max_tokens'])
+
+/** 单次工具调用错误判别（summarize / count / tool-stats 三口径的公共内核）：
+ *  'cancelled'（result 含 <tool_use_error> + Cancelled）/ 'failed'（Exit code /
+ *  error 状态 / errorType）/ null（无错）。 */
+export function toolCallErrorKind(
+  tc: { resultJson?: string | null | undefined; state?: string; errorType?: string | null | undefined },
+): 'cancelled' | 'failed' | null {
+  const r = tc.resultJson ?? ''
+  if (r.includes('<tool_use_error>') && r.includes('Cancelled')) return 'cancelled'
+  if (r.includes('Exit code') || tc.state === 'error' || tc.state === 'failed' || tc.errorType) return 'failed'
+  return null
+}
 
 export function summarizeToolCallErrors(
   toolCalls: ToolCallErrorItem[],
@@ -45,12 +76,11 @@ export function summarizeToolCallErrors(
   const details: Array<{ toolName: string; type: string }> = []
 
   for (const tc of toolCalls) {
-    const r = tc.resultJson ?? ''
-
-    if (r.includes('<tool_use_error>') && r.includes('Cancelled')) {
+    const kind = toolCallErrorKind(tc)
+    if (kind === 'cancelled') {
       cancelledCount++
       details.push({ toolName: tc.toolName, type: 'cancelled' })
-    } else if (r.includes('Exit code') || tc.state === 'error' || tc.state === 'failed' || tc.errorType) {
+    } else if (kind === 'failed') {
       failed++
       details.push({ toolName: tc.toolName, type: 'failed' })
     }
@@ -86,12 +116,7 @@ export function countToolCallErrors(
   const map = new Map<string, { count: number; firstTurnIndex: number | null }>()
 
   for (const tc of toolCalls) {
-    const r = tc.resultJson ?? ''
-    let isError = false
-    if (r.includes('<tool_use_error>') && r.includes('Cancelled')) isError = true
-    else if (r.includes('Exit code') || tc.state === 'error' || tc.state === 'failed' || tc.errorType) isError = true
-
-    if (isError && tc.turn?.sessionId) {
+    if (toolCallErrorKind(tc) != null && tc.turn?.sessionId) {
       const sid = tc.turn.sessionId
       const entry = map.get(sid) ?? { count: 0, firstTurnIndex: null }
       entry.count++

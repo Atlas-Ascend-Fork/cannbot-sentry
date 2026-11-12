@@ -12,7 +12,7 @@ import path from 'node:path';
 import { readCaptureBuffer, readCaptureHead, readCaptureText as readArchivedText } from '@/lib/compression';
 import { createLogger } from '@/lib/logger';
 import { readEnvelope, readEnvelopeWithLegacy } from '@/lib/shared/envelope';
-import { classifyUserInjection } from './injections/index';
+import { classifyUserInjection, stripTokenBudgetReminders } from './injections/index';
 import { isSkillInjectionText } from './injections/claude-code';
 import { isRolloutFileName } from './codex-naming';
 import { isDshSessionLogName } from '../dsh-bridge/native';
@@ -69,7 +69,7 @@ export interface ClaudeJsonlLine {
   // system-reminder 包装。其余 attachment 子类型仍是纯元数据
   attachment?: AttachmentLike;
   // x_lake 信封字段：读方一律经 shared/envelope readEnvelope 解析
-  // （键名唯一定义处），此处不再逐字段声明
+  // 解析（键名与优先级单一真身），此处不再逐字段声明
 }
 
 export interface XLake {
@@ -89,7 +89,7 @@ export interface XLake {
     kind?: string;
     dedup?: { originalChars: number; fingerprint: string };
     reasoningTokens?: number;
-    toolCalls?: Array<{ toolUseId: string; state?: string; errorType?: string; errorMessage?: string; durationMs?: number; startedAt?: string }>;
+    toolCalls?: Array<{ toolUseId: string; state?: string; errorType?: string; errorMessage?: string; durationMs?: number; startedAt?: string; completedAt?: string }>;
     turnKind?: string;
     producer?: string;
     framework?: string;
@@ -145,6 +145,10 @@ interface ClaudeUsage {
   output_tokens: number;
   cache_read_input_tokens?: number;
   cache_creation_input_tokens?: number;
+  // cpx 捕获扩展（openai/responses 重组器归一写入；claude native wire 无此
+  // 字段）。旧版 cpx 未把它写进 cc-wire-round 信封 → mergedReasoning 恒 0，
+  // 读侧在此兜底恢复（真机实测 codex 捕获 197 reasoning → 落库 0）。
+  reasoning_tokens?: number;
 }
 
 function extractTextContent(content: string | ContentBlock[] | undefined): string | null {
@@ -314,12 +318,20 @@ export function parseJsonlLines(filePath: string): ClaudeJsonlLine[] {
 }
 
 /** 工具结果登记：内容 + 结果行时间戳（tool_result 完成时刻，工具真实时长的右边界） */
+// wire 捕获的历史重放会逐请求重复携带同一 tool_result（真机实测：1007 个
+// 唯一结果被 2310 条载体行携带，73% 重放 2–5 次）：首条载体行紧跟真实完成
+// 时刻，后续重放晚数小时/数天。首现胜出——仅当首现缺有效时间戳时才允许
+// 后续载体回填（时间戳缺失兜底，不引入 last-wins）。若允许覆盖，completedAt
+// 会滑到最后一次重放的请求时刻（现场：42ms 的 Bash 被记成 50653.9s，连带
+// nativeBoundary 的 toolEnd 推算与后续轮 latency 一并被撑爆）。
 function collectAllToolResults(lines: ClaudeJsonlLine[]): Map<string, { content: string; tsMs: number | null }> {
   const resultMap = new Map<string, { content: string; tsMs: number | null }>();
   for (const line of lines) {
     if (line.type === 'user' && line.message?.content && Array.isArray(line.message.content)) {
       for (const block of line.message.content as ContentBlock[]) {
         if (block.type === 'tool_result' && block.tool_use_id && block.content) {
+          const existing = resultMap.get(block.tool_use_id);
+          if (existing != null && existing.tsMs != null) continue; // 首现胜出，重放不覆盖
           const ts = line.timestamp != null && isValidISO(line.timestamp)
             ? new Date(line.timestamp).getTime()
             : null;
@@ -395,6 +407,9 @@ export function listSessions(dirPath: string): SessionListItem[] {
     let createdAt: string;
     let endedAt: string | null = null;
     let totalTokens = 0;
+    // 原生日志重放去重（见 replaySignature）：resume/compact 重写的历史副本不
+    // 是新计费——签名已见的 assistant 行不重复累计，预览口径与导入后一致
+    const seenUsageSigs = new Set<string>();
 
     try {
       createdAt = fs.statSync(file).mtime.toISOString();
@@ -414,8 +429,13 @@ export function listSessions(dirPath: string): SessionListItem[] {
         }
       }
       if (line.type === 'assistant' && line.message?.usage) {
-        const u = line.message.usage;
-        totalTokens += (u.input_tokens ?? 0) + (u.output_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
+        const sig = replaySignature(line);
+        const replayed = sig != null && seenUsageSigs.has(sig);
+        if (sig != null) seenUsageSigs.add(sig);
+        if (!replayed) {
+          const u = line.message.usage;
+          totalTokens += (u.input_tokens ?? 0) + (u.output_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0);
+        }
       }
     }
 
@@ -527,6 +547,16 @@ export function listSubagentSessions(dirPath: string, sessionId: string): Claude
       subagentsDir = path.join(parentDir, stem, 'subagents');
     }
   }
+  if (!fs.existsSync(subagentsDir)) {
+    // 会话目录布局（bundle 导出件 / lake 仓内 sessions/<sid>/<sid>.jsonl +
+    // sessions/<sid>/subagents/）：subagents/ 与主 jsonl 同目录并列，stem 与
+    // sessionId 相同（无 .native 装饰可借）——按同目录回退，否则 bundle 导入
+    // 子代理全部漏并（0 turns）。
+    const sibling = path.join(parentDir, 'subagents');
+    if (fs.existsSync(sibling) && fs.statSync(sibling).isDirectory()) {
+      subagentsDir = sibling;
+    }
+  }
   if (!fs.existsSync(subagentsDir) || !fs.statSync(subagentsDir).isDirectory()) return [];
 
   const results: ClaudeSubagentRef[] = [];
@@ -540,10 +570,10 @@ export function listSubagentSessions(dirPath: string, sessionId: string): Claude
         const filePath = path.join(subagentsDir, entry.name);
         const meta = readSubagentMeta(filePath);
         // codex-proxy 身份对齐：文件名 id（sub-<hash>）是 cpx 在 spawn 输出
-        // 到达前铸的占位，真实 agentId 由 meta backfill——bridge-builder 按
+        // 到达前铸的占位，真身 agentId 由 meta backfill——bridge-builder 按
         // spawn 输出的 agent_id 锚定，规范 id 必须用 agentId 才能和 Bridge/
         // Execution 对上（否则泳道/性能视图全部 0 turns）。claude 捕获无
-        // agentId，回退文件名 id（= 真实会话 id，行为不变）。
+        // agentId，回退文件名 id（= 真身会话 id，行为不变）。
         results.push({
           id: meta?.agentId ?? m[1],
           filePath,
@@ -592,7 +622,7 @@ export function readSubagentInteractions(dirPath: string, sessionId: string): Ra
 function isValidISO(timestamp: string): boolean {
   // 前缀正则快速短路 + 解析校验双保险：正则无尾部锚定，'2026-08-18T10:00:105Z'
   // （秒位三位）等「格式命中但 new Date() 解析为 NaN」的脏值会穿透；NaN 经下游
-  // falsy 判定会被替换成 epoch 0（PR #112 review 实证），故解析失败一律判非法
+  // falsy 判定会被替换成 epoch 0（review 实证），故解析失败一律判非法
   if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(timestamp)) return false;
   return Number.isFinite(new Date(timestamp).getTime());
 }
@@ -669,12 +699,33 @@ const KNOWN_ATTACHMENT_SUBTYPES = new Set([
 // 单独计键且不入白名单：真实用户插队被误标时必须 warn 可查，不能与普通
 // 元数据跳过混在 info 里无声
 const GATED_QUEUED_KEY = 'attachment/queued_command!gated';
+// system 行（proxy/导出惯例的 system 轮载体）语义跳过子类型：wire 簿记与
+// 重复注入——与 attachment/* 子类型同款的白名单机制，info 级不告警
+const KNOWN_SYSTEM_SKIP_SUBTYPES = new Set(['total_tokens_reminder', 'duplicate']);
+const SYSTEM_SKIP_TOKEN_BUDGET = 'system/total_tokens_reminder';
+const SYSTEM_SKIP_DUPLICATE = 'system/duplicate';
 const isKnownSkipKey = (key: string): boolean => {
   if (KNOWN_SKIP_TYPES.has(key)) return true;
-  return key.startsWith('attachment/') && KNOWN_ATTACHMENT_SUBTYPES.has(key.slice('attachment/'.length));
+  if (key.startsWith('attachment/')) return KNOWN_ATTACHMENT_SUBTYPES.has(key.slice('attachment/'.length));
+  if (key.startsWith('system/')) return KNOWN_SYSTEM_SKIP_SUBTYPES.has(key.slice('system/'.length));
+  return false;
 };
 
 const skipLog = createLogger('claude-jsonl');
+
+/**
+ * 原生日志重放签名：message.id + usage 快照。
+ *
+ * claude-code 的 session jsonl 是日志不是台账——resume/compact 后会 verbatim
+ * 重写全历史（同 message.id 同 usage 的响应整行再写一遍，实测长会话 80% 行是重放副本）。
+ * 每个重放副本都是同一计费响应的重复记录，不是新计费；签名（id+usage 逐字一致）= 重放判别。真新响应必有新 id 或新 usage 快照。
+ */
+function replaySignature(line: ClaudeJsonlLine): string | null {
+  const id = line.message?.id;
+  const usage = line.message?.usage;
+  if (!id || !usage) return null;
+  return `${id}\u0000${JSON.stringify(usage)}`;
+}
 
 export function groupAssistantLines(lines: ClaudeJsonlLine[]): AssistantGroup[] {
   const groups: AssistantGroup[] = [];
@@ -792,6 +843,17 @@ export function buildAssistantInteraction(
     const text = extractTextContent(al.message?.content);
     if (text) textParts.push(text);
 
+    // 声明式信封通道（本行一次读）：cc-db-turn（insight 导出）的 toolCalls
+    // 声明携带 per-tool 真实时长——标准管线通道是 ToolCallInfo.startedAt/
+    // completedAt（与 opencode part 表同源），声明优先于行级时间戳推导。
+    // 导出件工具结果载体行与发起行同戳，时间戳推导恒为 0 —— 不读声明的
+    // 导入路径（直接文件导入 / refresh 增量刷新）会把真实工具时长打回 0。
+    const xbRaw = readEnvelope(al) as XLake | undefined;
+    const xbTurn = isTurnPayload(xbRaw) ? xbRaw!.data : null;
+    const declaredToolCalls = Array.isArray(xbTurn?.toolCalls)
+      ? new Map(xbTurn!.toolCalls!.map(d => [d.toolUseId, d]))
+      : null;
+
     const realTimestamp = al.timestamp || null;
     // 非法时间戳与缺失同路兜底（fileMtime 估计）：回退 epoch 0 会把 turn 时间打成
     // 1970，经 subagentTiming 的 min 聚合放大成毫秒级伪时延（CI 实证 1.78e12 溢出 Int 列）
@@ -802,15 +864,32 @@ export function buildAssistantInteraction(
     const toolCalls = extractToolCalls(contentBlocks);
     if (toolCalls) {
       for (const tc of toolCalls) {
-        // startedAt=tool_use 所在行时刻（发起），completedAt=tool_result 行时刻（完成）
-        // ——工具真实时长的左右边界；结果行缺失/无时间戳 → null（消费方降级）
+        // 默认：startedAt=tool_use 所在行时刻（发起），completedAt=tool_result
+        // 行时刻（完成）——工具真实时长的左右边界；结果行缺失/无时间戳 → null
+        //（消费方降级）。声明（cc-db-turn toolCalls）优先：startedAt/completedAt
+        // 显式值直接采信；无 completedAt 但有 durationMs 时 completed =
+        // startedAt + durationMs（导出端双字段对称缺失时兜底）
         const entry = allToolResults.get(tc.toolCallId);
         const v = entry?.content ?? tc.resultJson ?? null;
+        const dec = declaredToolCalls?.get(tc.toolCallId);
+        let startedAt = timeCreated;
+        let completedAt = entry?.tsMs ?? null;
+        if (dec) {
+          const decStart = typeof dec.startedAt === 'string' && isValidISO(dec.startedAt)
+            ? Date.parse(dec.startedAt) : null;
+          if (decStart != null) startedAt = decStart;
+          const decEnd = typeof dec.completedAt === 'string' && isValidISO(dec.completedAt)
+            ? Date.parse(dec.completedAt) : null;
+          if (decEnd != null) completedAt = decEnd;
+          else if (typeof dec.durationMs === 'number' && dec.durationMs > 0) {
+            completedAt = startedAt + dec.durationMs;
+          }
+        }
         allToolCalls.push({
           ...tc,
           resultJson: v == null ? null : (typeof v === 'string' ? v : JSON.stringify(v)),
-          startedAt: timeCreated,
-          completedAt: entry?.tsMs ?? null,
+          startedAt,
+          completedAt,
         });
       }
     }
@@ -849,9 +928,8 @@ export function buildAssistantInteraction(
     // Session.version（proxySourceOf 只认 -proxy 后缀，导出件不误标代理徽标）。
     if (!isProxy && typeof al.source === 'string'
       && (al.source.endsWith('-proxy') || al.source === 'insight-export')) isProxy = true;
-    // 声明式信封通道（优先）：同一信息的权威源 + legacy 没有的 reasoningTokens
-    const xbRaw = readEnvelope(al) as XLake | undefined;
-    const xbTurn = isTurnPayload(xbRaw) ? xbRaw!.data : null;
+    // 声明式信封通道（优先，行级已在循环头读过）：同一信息的权威源 +
+    // legacy 没有的 reasoningTokens
     if (xbTurn) {
       isProxy = true;
       if (xbTurn.stopReason != null) mergedFinishReason = xbTurn.stopReason;
@@ -870,11 +948,14 @@ export function buildAssistantInteraction(
     const cacheWrite = fu.cache_creation_input_tokens ?? 0;
     // inputMessagesTokens = max of thinking line's full input and incremental+cache
     const inputMessagesTokens = Math.max(maxRawInputTokens, incrementalInput + cacheRead + cacheWrite);
+    // usage 块 reasoning 兜底：信封（cc-wire-round.reasoningTokens，权威）缺
+    // 席时读 cpx 写入 usage 块的 reasoning_tokens——覆盖旧版捕获件
+    const reasoningTokens = mergedReasoning > 0 ? mergedReasoning : (fu.reasoning_tokens ?? 0);
     mergedUsage = {
       total: inputMessagesTokens + (fu.output_tokens ?? 0),
       input: incrementalInput,
       output: fu.output_tokens ?? 0,
-      reasoning: mergedReasoning,
+      reasoning: reasoningTokens,
       cacheRead,
       cacheWrite,
       cost: 0,
@@ -883,11 +964,12 @@ export function buildAssistantInteraction(
   } else if (group.lines[0]?.message?.usage) {
     // No final line with cache fields — use first line's cumulative input
     const u0 = group.lines[0].message.usage;
+    const reasoningTokens0 = mergedReasoning > 0 ? mergedReasoning : (u0.reasoning_tokens ?? 0);
     mergedUsage = {
       total: (u0.input_tokens ?? 0) + (u0.output_tokens ?? 0),
       input: u0.input_tokens ?? 0,
       output: u0.output_tokens ?? 0,
-      reasoning: mergedReasoning,
+      reasoning: reasoningTokens0,
       cacheRead: 0,
       cacheWrite: 0,
       cost: 0,
@@ -898,32 +980,9 @@ export function buildAssistantInteraction(
   const mergedContent = textParts.length > 0 ? textParts.join('\n') : null;
   const mergedToolCalls = allToolCalls.length > 0 ? allToolCalls : null;
 
-  // Detect skill invocations from Read tool_use calls to SKILL.md paths
-  // When Claude Code loads a skill, it reads <skill-dir>/SKILL.md — this is the
-  // definitive signal that a skill was invoked in this turn.
-  const skillInvocations: ToolCallInfo[] = [];
-  for (const tc of allToolCalls) {
-    if (tc.toolName === 'Read' && tc.argsJson) {
-      try {
-        const args = JSON.parse(tc.argsJson);
-        const filePath = String(args.file_path ?? '');
-        if (filePath.endsWith('/SKILL.md')) {
-          const skillName = filePath.split('/').slice(-2, -1)[0] || filePath.split('/SKILL.md')[0].split('/').pop() || '';
-          skillInvocations.push({
-            toolCallId: `skill-${tc.toolCallId}`,
-            toolName: `skill/${skillName}`,
-            argsJson: JSON.stringify({ skill: skillName, file_path: filePath }),
-            resultJson: null,
-            state: 'completed',
-          });
-        }
-      } catch { /* ignore */ }
-    }
-  }
-
-  const finalToolCalls = skillInvocations.length > 0
-    ? [...allToolCalls, ...skillInvocations]
-    : mergedToolCalls;
+  // B 形技能加载检测（Read 读 / shell 读类命令 cat SKILL.md）在 turn-split
+  // 单点进行——adapter 不再合成 skill/<name> 调用（历史缺陷：假工具行混进
+  // 工具统计、resultJson 恒空断原文恢复链）
 
   // Skip if no content and no tool calls——但携带 usage/finishReason 的空组保留：
   // 现场回归（vbYQjB #1975 后）：subagent 最后一轮 stopReason=length、content=[]、
@@ -966,7 +1025,7 @@ export function buildAssistantInteraction(
     subagent_name: null,
     subagent_session_id: null,
     subagent_type: null,
-    tool_calls: finalToolCalls,
+    tool_calls: mergedToolCalls,
     usage: mergedUsage,
     model: mergedModel,
     modelID: null,
@@ -1040,6 +1099,12 @@ export function readSession(filePath: string, sessionId: string): RawInteraction
   // 跳过行计数（按 type）：未知类型 warn（上游格式演进信号），已知元数据 info
   const skippedTypes = new Map<string, number>();
   const noteSkip = (t: string) => { skippedTypes.set(t, (skippedTypes.get(t) ?? 0) + 1); };
+  // system 行已见内容（wire 重复注入去重）：system 组件无 message.id，捕获
+  // 侧逐请求原样落盘——同内容首现保留，重复跳过（见 system 分支注释）
+  const seenSystemTexts = new Set<string>();
+  // 重放签章已见集 + 重放组计数（见 replaySignature——resume/compact 历史重写去重）
+  const seenReplaySigs = new Set<string>();
+  let replaySkippedGroups = 0;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
@@ -1049,6 +1114,18 @@ export function readSession(filePath: string, sessionId: string): RawInteraction
     if (group) {
       if (emittedGroups.has(group)) continue; // already emitted
       emittedGroups.add(group);
+
+      // 原生日志重放去重（见 replaySignature）：组内全部 assistant 行的
+      // (message.id, usage) 签名都已在更早组出现过 = resume/compact 的
+      // verbatim 历史重放副本，整组跳过——不产生幻影轮次、不重计 token
+      // （真新响应必有新 id 或新 usage 快照；分裂续段签名不全见过 →
+      // 照常入册，不丢内容）。proxy wire 每响应只记一行，签名唯一 → 零影响。
+      const groupSigs = group.lines.map(replaySignature);
+      if (groupSigs.length > 0 && groupSigs.every(s => s != null && seenReplaySigs.has(s))) {
+        replaySkippedGroups++;
+        continue;
+      }
+      for (const s of groupSigs) if (s != null) seenReplaySigs.add(s);
 
       const merged = buildAssistantInteraction(group, allToolResults, fileMtime, nativeBoundary);
       if (merged) {
@@ -1157,11 +1234,29 @@ export function readSession(filePath: string, sessionId: string): RawInteraction
       // claude-code type:"system" lines (client-side status/hook events:
       // top-level `content` string, no `message`) are NOT model input and
       // stay skipped.
+      //
+      // Wire repetition semantics: the system array carries no message.id,
+      // so the capture side cannot dedup it per request the way the messages
+      // history is deduped — every request re-records its system components:
+      // the token-budget countdown (bookkeeping that rides three carrier
+      // shapes: pure string, single block, or a trailing line appended to the
+      // static prompt string — strip it; a component that becomes empty is
+      // pure bookkeeping, skip it) and static injections (identical text per
+      // request after stripping — keep the FIRST occurrence, drop the
+      // repeats; the materialized turn carries the stripped text). The
+      // conversation timeline converges to "each injection once, at its
+      // first appearance". Wire fidelity is unaffected: wire-rounds /
+      // skills full-set / full context all read the raw capture, never the
+      // Turn table.
       const raw = extractTextContent(line.message.content);
       if (!raw) { noteSkip(line.type); continue; }
+      const content = stripTokenBudgetReminders(raw);
+      if (!content) { noteSkip(SYSTEM_SKIP_TOKEN_BUDGET); continue; }
+      if (seenSystemTexts.has(content)) { noteSkip(SYSTEM_SKIP_DUPLICATE); continue; }
+      seenSystemTexts.add(content);
       result.push({
         role: 'system',
-        content: raw,
+        content,
         timestamp,
         timeInfo: { created: timeCreated },
         agent: null, subagent_name: null, subagent_session_id: null, subagent_type: null,
@@ -1193,6 +1288,10 @@ export function readSession(filePath: string, sessionId: string): RawInteraction
       // 未知类型：不产出交互直接掉出 if 链——计数，日志层分级告警
       noteSkip(line.type);
     }
+  }
+
+  if (replaySkippedGroups > 0) {
+    skipLog.info('原生日志重放组已去重（resume/compact verbatim 历史重写，非新计费响应）', { sessionId, replaySkippedGroups });
   }
 
   if (skippedTypes.size > 0) {

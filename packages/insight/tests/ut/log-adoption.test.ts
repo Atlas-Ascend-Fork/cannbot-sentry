@@ -1,9 +1,9 @@
 // Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
 // This program is free software, you can redistribute it and/or modify it under the terms and conditions of
 // CANN Open Software License Agreement Version 2.0 (the "License").
-// Please refer to the License for details. You should not use this file except in compliance with the License.
+// Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
-// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
 // 日志采用率哨兵（防回潮锁）：每个 API 路由必须二选一——
@@ -25,7 +25,9 @@ describe('日志采用率哨兵：所有 route.ts 必须有错误日志通道', 
     const violations: string[] = [];
     for (const file of routes) {
       const src = fs.readFileSync(file, 'utf8');
-      const wrapped = /withRouteLog/.test(src);
+      // memberForwardGET/POST = run 成员视图转发工厂（内部包 withRouteLog，
+      // 转发的 session 处理器自身也带日志通道）——与直接包装等价
+      const wrapped = /(withRouteLog|memberForward(?:GET|POST))/.test(src);
       const manualLog = /log(Error|Warn|Info|Debug|Line)\s*\(/.test(src);
       if (!wrapped && !manualLog) violations.push(path.relative(PKG, file));
     }

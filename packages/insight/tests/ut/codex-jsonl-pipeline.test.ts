@@ -3,7 +3,7 @@
 // CANN Open Software License Agreement Version 2.0 (the "License").
 // Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
-// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
 // codex-jsonl 适配器（agent-source-framework 首个新源）全链路 IT：
@@ -35,7 +35,7 @@ import {
   requireSource,
   sniffImportableFile,
 } from '@/lib/ingest/adapters/registry';
-import { BRAND_SOURCE_TYPE, isBrandSourceType } from '@/lib/branding';
+import { BRAND_SOURCE_TYPE } from '@/lib/branding';
 
 const DATA = path.join(__dirname, './data/codex-sessions');
 const MAIN = '11111111-aaaa-4b04-8f7e-abcdef000001';
@@ -75,7 +75,7 @@ describe('agent-source-framework 注册表：身份映射与文件嗅探单点',
     expect(sourceOfFramework('claude-code')).toBe('claude-jsonl');
     // 容器源（insight 导出件 = 序列化搬运格式，非会话生产者）不声明源级
     // framework——会话身份走 readSessionMeta 件内声明（曾用容器身份冒充
-    // agent 身份落库的误标史，旧值已随品牌契约退役）。反查同样不命中，
+    // agent 身份：framework='cannbot-insight' 误标史）。反查同样不命中，
     // 存量误标行由调用方 `?? framework` 自身值兜底路由
     expect(frameworkOfSource(BRAND_SOURCE_TYPE)).toBeNull();
     expect(sourceOfFramework(BRAND_SOURCE_TYPE)).toBeNull();
@@ -98,19 +98,6 @@ describe('agent-source-framework 注册表：身份映射与文件嗅探单点',
     expect(sniffImportableFile('opencode.db')).toBe('opencode-db');
     expect(sniffImportableFile('notes.txt')).toBeNull();
     expect(sniffImportableFile('README.md')).toBeNull();
-  });
-
-  it('品牌容器标识读侧兼容：存量 cannbot-insight / cannbot_session_ 旧值同义识别', () => {
-    // 品牌更名（cannbot-insight → context-insight）后，存量误标行 / 旧导出件
-    // 仍按品牌容器识别，不退化空显示 / 未知源（读侧兜底，只读不写）
-    expect(isBrandSourceType('context-insight')).toBe(true);
-    expect(isBrandSourceType('cannbot-insight')).toBe(true);
-    expect(isBrandSourceType('opencode')).toBe(false);
-    expect(isBrandSourceType(null)).toBe(false);
-    expect(isBrandSourceType(undefined)).toBe(false);
-    // 文件名级预分类：新前缀与旧前缀都命中品牌容器源
-    expect(sniffImportableFile('context_session_x.db')).toBe(BRAND_SOURCE_TYPE);
-    expect(sniffImportableFile('cannbot_session_x.db')).toBe(BRAND_SOURCE_TYPE);
   });
 });
 
@@ -281,7 +268,7 @@ describe('codex-jsonl 全链路导入（rollout → adapter → normalize → tu
     const session = await prisma.session.findFirst({ where: { taskId: MAIN, framework: 'codex' } });
     expect(session).not.toBeNull();
     expect(session!.query).toContain('请派发子代理'); // firstQuery 跳过注入
-    expect(session!.totalTokens).toBe(1835); // 1345 + (135+150) + (100+105)，与列表预览同口径
+    expect(Number(session!.totalTokens)).toBe(1835); // 1345 + (135+150) + (100+105)，与列表预览同口径
 
     const turns = await prisma.turn.findMany({
       where: { sessionId: session!.id },

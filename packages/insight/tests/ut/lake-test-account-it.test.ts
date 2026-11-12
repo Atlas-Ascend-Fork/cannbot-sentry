@@ -1,14 +1,14 @@
 // Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
-// This program is free software: you can redistribute it and/or modify it under the terms and conditions of
+// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
 // CANN Open Software License Agreement Version 2.0 (the "License").
-// You may refer to the License for details. You should not use this file except in compliance with the License.
+// Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
-// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
-// 测试连接属主文案回归锁（PR #38 审查意见）：token 模式不带账户是常态——
+// 测试连接属主文案回归锁（审查意见）：token 模式不带账户是常态——
 // 前端 lakeRemoteInput 只上送 {authMode,token}（account 不随请求），
-// LakeTokenDialog 保存同样 username||'oauth2'，requestAuth.username 亦
+// CannbayTokenDialog 保存同样 username||'oauth2'，requestAuth.username 亦
 // 兜底 'oauth2'。旧接线把 pushAuth.username 传给 credentialTestMessage 的
 // account，gitcode 上令牌有效时误报「与所填账户 oauth2 不一致」——用户
 // 从没填过 oauth2，那是系统占位符。锁三态：
@@ -27,7 +27,7 @@ vi.mock('../../src/lib/lake/mirror', async (importOriginal) => {
 
 import { testLakeRemote, credentialTestMessage } from '../../src/lib/lake/remote';
 
-const GITCODE = 'https://gitcode.com/example/lake-fixture.git';
+const GITCODE = 'https://gitcode.com/cann/cannbot-sentry.git';
 
 describe('test 连接属主文案：oauth2 兜底占位不参与「所填账户」不一致判定', () => {
   afterEach(() => vi.unstubAllGlobals());

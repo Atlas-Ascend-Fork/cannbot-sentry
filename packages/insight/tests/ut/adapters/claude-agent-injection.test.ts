@@ -1,9 +1,9 @@
 // Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
 // This program is free software, you can redistribute it and/or modify it under the terms and conditions of
 // CANN Open Software License Agreement Version 2.0 (the "License").
-// Please refer to the License for details. You should not use this file except in compliance with the License.
+// Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
-// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
 // claude-code ≥2.1 handback 协议适配 IT：指纹分类 → system 重分类 → 摘要化
@@ -65,8 +65,10 @@ describe('readSession（handback 协议混合夹具，端到端）', () => {
   const userTurns = interactions.filter(i => i.role === 'user');
 
   it('五类框架注入全部重分类 system 且内容为摘要', () => {
-    // 夹具注入：1 回放 + 1 背景事件 + 1 label + 1 状态查询（+1 total_tokens 本就是 system 行）
-    expect(systemTurns.length).toBe(5);
+    // 夹具注入：1 回放 + 1 背景事件 + 1 label + 1 状态查询。total_tokens
+    // 倒计时是 wire 簿记（claude-code 客户端逐请求注入 system 组件）——
+    // 读取层指纹跳过，不入对话时间线（wire 原文保真在捕获文件）
+    expect(systemTurns.length).toBe(4);
 
     const replay = systemTurns.find(t => t.content?.startsWith('[transcript 回放]'));
     expect(replay?.content).toBe('[transcript 回放] 3 行子代理记录——安全审查用副本，原文见子代理捕获');
@@ -76,7 +78,7 @@ describe('readSession（handback 协议混合夹具，端到端）', () => {
 
     expect(systemTurns.some(t => t.content?.startsWith('[label 请求]'))).toBe(true);
     expect(systemTurns.some(t => t.content?.startsWith('[状态查询] Current state: working'))).toBe(true);
-    expect(systemTurns.some(t => t.content?.startsWith('<total_tokens>'))).toBe(true);
+    expect(systemTurns.some(t => t.content?.startsWith('<total_tokens>'))).toBe(false);
   });
 
   it('注入原文不入 interactions（DB 无双份存储）', () => {
@@ -182,9 +184,9 @@ describe('首真人查询回落（data-service.firstHumanQueryText）', () => {
 describe('会话 Query 决议（data-service.resolveSessionQuery）', () => {
   it('opencode 标题优先于首真人查询（对意图的浓缩更准）', () => {
     expect(resolveSessionQuery(
-      { title: 'ConfusionMulGrad Acme C 算子开发' },
+      { title: 'ConfusionMulGrad Ascend C 算子开发' },
       [{ role: 'user', content: '继续' }],
-    )).toBe('ConfusionMulGrad Acme C 算子开发');
+    )).toBe('ConfusionMulGrad Ascend C 算子开发');
   });
 
   it('缺省占位标题（New session - …）回落首真人查询', () => {

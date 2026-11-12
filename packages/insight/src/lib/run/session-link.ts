@@ -1,7 +1,7 @@
 // Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
-// This program is free software: you can redistribute it and/or modify it under the terms and conditions of
+// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
 // CANN Open Software License Agreement Version 2.0 (the "License").
-// You may refer to the License for details. You should not use this file except in compliance with the License.
+// Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
@@ -37,20 +37,34 @@ export async function joinSessionRefs(
 ): Promise<Map<string, SessionRef>> {
   const sids = [
     ...new Set(
-      index.graphMembers
+      index.sessionMembers
         .map(m => m.member.sessionId)
         .filter((sid): sid is string => typeof sid === 'string' && sid.length > 0),
     ),
   ];
+  return sessionRefsByTaskIds(sids, prisma);
+}
+
+/** 按 taskId 集合 join 会话行（run 成员 join / solo 合成共用）。同 sid 双行
+ *  消歧（谓词族，禁裸等值）：①优先原生行（agentFrameworkOf 剥 -proxy 后缀
+ *  等于 framework 原值 = 非 proxy 记录）；②同 sid 多原生行（罕见双框架导出）
+ *  优先有 turn 的行；③仍并列取首行（稳定序：DB 返回序）。framework 显式
+ *  传入时精确消歧（同 sid 双行：proxy + native）。 */
+export async function sessionRefsByTaskIds(
+  sids: string[],
+  prisma: PrismaClient,
+  framework?: string,
+): Promise<Map<string, SessionRef>> {
   const result = new Map<string, SessionRef>();
   if (sids.length === 0) return result;
 
   const rows = await prisma.session.findMany({
-    where: { taskId: { in: sids } },
+    where: framework != null ? { taskId: { in: sids }, framework } : { taskId: { in: sids } },
     select: {
       id: true, taskId: true, framework: true, label: true,
       startTime: true, endTime: true, totalTokens: true, totalLatencyMs: true,
-      totalCacheReadTokens: true,
+      totalCacheReadTokens: true, model: true, totalCost: true, version: true,
+      sourcePath: true,
     },
   });
 
@@ -82,9 +96,6 @@ export async function joinSessionRefs(
   for (const sid of sids) {
     const candidates = byTaskId.get(sid);
     if (!candidates || candidates.length === 0) continue;
-    // 消歧（谓词族，禁裸等值）：①优先原生行（agentFrameworkOf 剥 -proxy 后缀
-    // 等于 framework 原值 = 非 proxy 记录）；②同 sid 多原生行（罕见双框架导出）
-    // 优先有 turn 的行；③仍并列取首行（稳定序：DB 返回序）
     const native = candidates.filter(r => agentFrameworkOf(r.framework) === r.framework);
     const pool = native.length > 0 ? native : candidates;
     const withTurns = pool.filter(r => (turnsByRow.get(r.id) ?? 0) > 0);
@@ -94,15 +105,20 @@ export async function joinSessionRefs(
       framework: chosen.framework,
       rowId: chosen.id,
       turns: turnsByRow.get(chosen.id) ?? 0,
-      totalTokens: chosen.totalTokens,
+      totalTokens: Number(chosen.totalTokens),
       durationMs: chosen.endTime
         ? chosen.endTime.getTime() - chosen.startTime.getTime()
         : null,
       label: chosen.label,
       startTime: chosen.startTime ? chosen.startTime.toISOString() : null,
       endTime: chosen.endTime ? chosen.endTime.toISOString() : null,
-      cacheReadTokens: chosen.totalCacheReadTokens,
+      cacheReadTokens: Number(chosen.totalCacheReadTokens),
       contextPeakPct: contextPeakByRow.get(chosen.id) ?? null,
+      model: chosen.model,
+      totalCost: chosen.totalCost,
+      version: chosen.version,
+      totalLatencyMs: Number(chosen.totalLatencyMs),
+      sourcePath: chosen.sourcePath,
     });
   }
   return result;

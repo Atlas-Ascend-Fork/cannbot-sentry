@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
-// This program is free software: you can redistribute it and/or modify it under the terms of
+// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
 // CANN Open Software License Agreement Version 2.0 (the "License").
 // Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
@@ -20,7 +20,7 @@ const fakePrisma = {
 };
 vi.mock('@/lib/db', () => ({ prisma: fakePrisma }));
 
-const { GET } = await import('@/app/api/observe/session/agent-content/route');
+const { GET } = await import('@/lib/observe/session-handlers/agent-content');
 
 const FIXTURE_DIR = path.resolve(__dirname, './data/agent-md-system-recover');
 

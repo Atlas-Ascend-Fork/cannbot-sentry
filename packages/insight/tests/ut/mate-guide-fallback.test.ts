@@ -1,15 +1,15 @@
 // Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
 // This program is free software, you can redistribute it and/or modify it under the terms and conditions of
 // CANN Open Software License Agreement Version 2.0 (the "License").
-// Please refer to the License for details. You should not use this file except in compliance with the License.
+// Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
-// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
 // Mate 评审 GUIDE 读取兜底 IT：
 //   现场（npm 安装）构建产物 .next/server/assets/GUIDE.<hash>.md 缺失
 //   （包不带 .next、首启现场构建，构建中断/损坏）时，五维评审曾整片
-//   ENOENT 失败（现场案例：node_modules/context-insight/.next/server/
+//   ENOENT 失败（现场案例：node_modules/cannbot-insight/.next/server/
 //   assets/GUIDE.05zsj0zhcfc4-.md 不存在）。src/ 随包发布——回落源文件，
 //   且兜底命中必须 logWarn 留痕（ctxi -f 重建的行动信号，不静默带病跑）。
 import { describe, it, expect, vi, beforeEach } from 'vitest'

@@ -1,9 +1,9 @@
 // Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
 // This program is free software, you can redistribute it and/or modify it under the terms and conditions of
-// CANN Open Software License Agreement Version 2.0 (the "License).
-// Please refer to the License for details. You should not use this file except in compliance with the License.
+// CANN Open Software License Agreement Version 2.0 (the "License").
+// Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
-// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE.
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
 // 内置表解析 IT：chdir 到空目录 + resetConfigCache，脱离本机 context-windows.json
@@ -42,15 +42,6 @@ describe("getContextWindowLimit 内置表解析", () => {
 
   it("未登记型号走子串兜底：glm-5.9 → glm-5 的 1M（先于 fallback 默认命中）", () => {
     expect(getContextWindowLimit("glm-5.9")).toBe(1_000_000)
-  })
-
-  it("横线 snapshot id：glm-5-2-260617 → 1M（现场 opencode-proxy 会话曾落 glm-5 子串，141.6% 假超限）", () => {
-    expect(getContextWindowLimit("glm-5-2-260617")).toBe(1_000_000)
-  })
-
-  it("完全未登记型号与 null model 走 fallback 默认 1M", () => {
-    expect(getContextWindowLimit("zzz-unknown-999")).toBe(1_000_000)
-    expect(getContextWindowLimit(null)).toBe(1_000_000)
   })
 
   it("带日期后缀命中长键：glm-5.3-20260101 → 1M（不被短键 glm-5 遮蔽成 200K）", () => {

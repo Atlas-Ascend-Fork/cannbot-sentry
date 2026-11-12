@@ -1,14 +1,14 @@
 // Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
-// This program is free software: you can redistribute it and/or modify it under the terms and conditions of
+// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
 // CANN Open Software License Agreement Version 2.0 (the "License").
-// Please refer to the License for details. You should not use this file except in compliance with the License.
+// Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
-// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT OF MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
 // CLI 版本旗标（npm 全局安装后的用户直觉输入）：
 //   -v / --version 输出 `Context-Insight v<x.y.z>`（与 cpx 的 `cpx v0.1.x (路径)`
-//   风格对齐）；版本串唯一定义在 version.ts，这里锁绑定与组装不漂移。
+//   风格对齐）；版本串单一真身在 version.ts，这里锁绑定与组装不漂移。
 //   bin/context-insight.mjs 的透传名单须放行 -v——否则 `ctxi -v` 掉进
 //   "无参数 → 启动 Web UI" 分支（名单断言防回归）。
 import { describe, it, expect } from 'vitest';

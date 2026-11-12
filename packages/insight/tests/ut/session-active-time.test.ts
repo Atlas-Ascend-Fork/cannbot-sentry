@@ -1,9 +1,9 @@
 // Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
-// This program is free software: you can redistribute it and/or modify it under the terms and conditions of
+// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
 // CANN Open Software License Agreement Version 2.0 (the "License").
-// Please refer to the License for details. You should not use this file except in compliance with the License.
+// Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
-// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT OF MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
 // 会话详情 Wall Clock 拆分：活跃/非活跃两口（turn 时间戳聚类，间隔 >5min
@@ -68,7 +68,7 @@ describe('GET /api/observe/session — Wall Clock 活跃/非活跃拆分', () =>
     expect(s).not.toBeNull()
     createdSessionIds.push(s!.id)
 
-    const { GET } = await import('@/app/api/observe/session/route')
+    const { GET } = await import('@/lib/observe/session-handlers/detail')
     const apiRes = await GET(new NextRequest(`http://localhost/api/observe/session?taskId=${sid}`))
     expect(apiRes.status).toBe(200)
     const data = await apiRes.json()
@@ -93,7 +93,7 @@ describe('GET /api/observe/session — Wall Clock 活跃/非活跃拆分', () =>
     expect(s).not.toBeNull()
     createdSessionIds.push(s!.id)
 
-    const { GET } = await import('@/app/api/observe/session/route')
+    const { GET } = await import('@/lib/observe/session-handlers/detail')
     const apiRes = await GET(new NextRequest(`http://localhost/api/observe/session?taskId=${sid}`))
     expect(apiRes.status).toBe(200)
     const data = await apiRes.json()
@@ -123,7 +123,7 @@ describe('GET /api/observe/session — Wall Clock 活跃/非活跃拆分', () =>
     expect(s).not.toBeNull()
     createdSessionIds.push(s!.id)
 
-    const { GET } = await import('@/app/api/observe/session/route')
+    const { GET } = await import('@/lib/observe/session-handlers/detail')
     const apiRes = await GET(new NextRequest(`http://localhost/api/observe/session?taskId=${sid}`))
     expect(apiRes.status).toBe(200)
     const data = await apiRes.json()

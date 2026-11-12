@@ -2,8 +2,10 @@
 # insight 单元用例入口（供仓顶 scripts/run-tests.sh 转调，也可单独执行）。
 # 依赖缺失时自动 npm install（fresh clone / 流水线一条命令可跑；postinstall
 # 会生成 Prisma client）。
-# tests 分层：tests/ut 默认跑（npm run test）；tests/e2e（真 CLI/浏览器/环境
-# 依赖）显式跑：npm run test:e2e。
+# tests 分层与入口：`npm run test` 一条命令全覆盖——pretest（tsc + 库预备）
+# → vitest（tests/ut 组件契约 + tests/pipeline 数据管线）→ Playwright
+# （tests/e2e 浏览器全栈，自举 boot-server：e2e.db 重建 + 按需构建 + 起服）。
+# 单层入口：npm run e2e（仅浏览器）/ npm run test:pipeline（仅管线）。
 # COVERAGE=1 时改跑 npm run test:cov（pretest + vitest --coverage，v8
 # provider 统计 src/ 全量；npm 只对 test 名挂 pretest 钩子，test:cov 需显式串）。
 # --coverage / -c 参数等价置 COVERAGE=1。
@@ -48,5 +50,13 @@ if [ "${COVERAGE:-0}" = "1" ]; then
     && echo "==> [insight] 覆盖率明细: packages/insight/coverage/index.html（浏览器）/ lcov.info"
   exit "$rc"
 else
-  npm run test
+  # UT 门禁 = pretest + vitest 全量（tests/ut + tests/pipeline + tests/cli），
+  # 与仓顶 scripts/run-tests.sh 分层一致：tests/e2e 浏览器用例按需单独跑
+  # （npm run e2e）。此前误走 npm run test（vitest && playwright）踩过两坑：
+  # 1) e2e 套件未合入时 playwright 无 config，按默认 testMatch 把全部 vitest
+  #    *.test.ts 当 spec 加载——数百个 internal state / next/server 解析错误
+  #    拖垮门禁（vitest 曾因失败短路挡住了这一层，UT 修绿后即暴露）；
+  # 2) 配套的浏览器自愈下载被静默且无超时，在被限流的 runner 上可挂死数
+  #    小时（实测 2h10m 起）。UT 门禁不碰浏览器，两个坑一并根除。
+  npm run pretest && npx vitest run
 fi

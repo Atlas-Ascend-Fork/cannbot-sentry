@@ -20,7 +20,7 @@ import { isRolloutFileName, rolloutSessionIdOf } from './codex-naming';
 // type ∈ session_meta / turn_context / response_item / event_msg /
 // token_usage_record / world_state。
 //
-// 内容主体是 response_item（OpenAI Responses API 项）；event_msg 是 UI 线程
+// 内容真身是 response_item（OpenAI Responses API 项）；event_msg 是 UI 线程
 // 视图（item_completed/token_count 与 response_item 重复），只取 task_started
 // 做轮次计数，内容不读（双读会双计 token/轮次，D10）。
 //
@@ -265,6 +265,10 @@ function readSessionFromLines(lines: CodexRolloutLine[]): RawInteraction[] {
       ? usageTs - groupFirstTs
       : null;
 
+    // B 形技能加载检测（exec_command 读类命令 cat <skill>/SKILL.md）在
+    // turn-split 单点进行——本适配器只产真实工具调用，不合成 skill/<name> 行
+    const finalToolCalls = toolCalls.length > 0 ? toolCalls : null;
+
     result.push({
       role: 'assistant',
       content,
@@ -274,7 +278,7 @@ function readSessionFromLines(lines: CodexRolloutLine[]): RawInteraction[] {
       subagent_name: null,
       subagent_session_id: null,
       subagent_type: null,
-      tool_calls: toolCalls.length > 0 ? toolCalls : null,
+      tool_calls: finalToolCalls,
       usage,
       model: currentModel,
       modelID: null,
@@ -327,7 +331,7 @@ function readSessionFromLines(lines: CodexRolloutLine[]): RawInteraction[] {
         break;
       }
       case 'event_msg': {
-        // task_started = 新用户轮（冲刷残留组）；其余 UI 事件不作为内容主体（D10）
+        // task_started = 新用户轮（冲刷残留组）；其余 UI 事件不作为内容真身（D10）
         if (payload.type === 'task_started') flushGroup(null, null);
         break;
       }
@@ -374,12 +378,17 @@ function readSessionFromLines(lines: CodexRolloutLine[]): RawInteraction[] {
         } else if (itemType === 'function_call') {
           markGroupStart(line);
           const callId = typeof payload.call_id === 'string' ? payload.call_id : '';
+          // 工具真实时长的左边界 = 本行时间戳（rollout 每条 item 独立打
+          // 戳）；右边界在 function_call_output 到达时经全局索引回填——此前
+          // 两字段恒缺，turn-split 回落轮时间且 durationMs 恒 0（真机实测
+          // 原生 codex 会话工具时长全 0）
           const tc: ToolCallInfo = {
             toolCallId: callId,
             toolName: typeof payload.name === 'string' ? payload.name : '',
             argsJson: typeof payload.arguments === 'string' ? payload.arguments : null,
             resultJson: null,
             state: 'completed',
+            startedAt: toMillis(line.timestamp),
           };
           toolCalls.push(tc);
           if (callId) toolCallIndex.set(callId, tc);
@@ -390,6 +399,9 @@ function readSessionFromLines(lines: CodexRolloutLine[]): RawInteraction[] {
           if (tc) {
             const out = payload.output;
             tc.resultJson = typeof out === 'string' ? out : (out != null ? JSON.stringify(out) : null);
+            // 右边界：工具执行的完成时刻 ≈ 输出行落盘戳（结果就绪才会写
+            // rollout；与捕获路径的 [上一轮响应末字节, 下一请求到达] 同语义）
+            tc.completedAt = toMillis(line.timestamp) ?? tc.completedAt ?? null;
           }
           // 未知 call_id（前文调用缺失/被裁剪）：丢弃，原文在盘上
         } else if (itemType === 'web_search_call') {

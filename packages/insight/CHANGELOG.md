@@ -2,68 +2,132 @@
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)。
 
-## [0.2.41] - 2026-10-27
-
-> 更名说明：主体品牌自本版起为 Context-Insight（npm 包 `context-insight`，命令 `context-insight` / `ctxi`，数据目录 `~/.context-insight/`——首启自动迁移 `~/.cannbot-insight/` 存量数据）；`cannbot-insight` 转为同内容变体包，老用户的部署脚本与目录习惯在变体包内不变。数据格式契约不随品牌变，两包数据完全互通。
+## [1.0.3] - 2026-11-09
 
 ### Added
-- 【声明原文覆盖图】Skill 审计报告新增「声明原文覆盖」区块：对账结果投影回声明原文逐段着色——绿=该段指令全部被触达、黄=有规则未验证（未触发或判不全，保守拉黄）、灰=未抽出指令（说明文字或抽取盲区），双指标分报「可评文本覆盖率」（未建模不进分母）与「建模完整度」；报告快照对账时刻的声明原文，旧报告无此数据不显示
-- 【声明覆盖视图】Skill 审计报告新增「声明覆盖」区块：声明的 workflow（规程 + 计划）有多少被会话实际触达——总比率 + 分节明细（未触发 / 未知逐条列出，组合声明打层徽章），unknown 计入分母诚实低估；旧报告无此数据不显示
-- 【上传同步原生会话】数据仓上传捕获会话时可勾选「同步上传本机原生会话」：自动定位同一场对话的原生记录（已导入行直取；本机磁盘按框架发现，Codex 按捕获时间窗 + 首问锚点匹配），未导入的先自动导入，与捕获一并落 `<sid>.native/` 同 sid 双记录；Web 弹窗勾选即预检显示找没找到，CLI 加 `--with-native`
+- 【Score 评测数据导出（RSI 自循环演进语料）】Score 板块内新增「导出评分 JSON」：单一版本化文件（`insight-score-export@1`）打包三层可回溯数据——全员完整评分卡（分数/判定/证据轮次）、维度定义快照（维度↔子项↔权重↔聚合策略——匹配关系自解释，含 profile 口径与自定义维）、溯源信息（insight/scorer 版本、profile、时刻、run·成员身份）+ 便利聚合（成员总分/维度均值）；API 端点同款载荷可程序化拉取（curl 即 RSI 管线入口），离线 HTML 导出内嵌同款档案（离线也可导）
+- 【浏览器 E2E 测试防护】Playwright 端到端套件上线（`npm run e2e`，`tests/e2e/`，46 用例全绿）：真构建 + 真服务 + 真库（`prisma/e2e.db` 每轮 migrations 重建）+ 真浏览器的全栈验证——覆盖工作台首页（语料就位/类型分段/搜索/行下钻）、导入向导双旅程（JSONL 首导「导入前后差一行」+ bundle 重导幂等）、run 工作台（tab 矩阵/深链/?a 高级门/历史栈返回钮）、Turns 搜索语法深链（`tool:X`/`tool:X member:Y` 下钻 + 命中浮层）、solo 会话视图（同壳工作台 + Markdown 导出）、韧性（真 404 错误卡 + 500 注入不白屏）；观测面板全面覆盖——Overview（身份卡/指标瓦片/Tool Calls 分组列表）、Graph（DAG SVG 节点 + 缩放工具条）、Turns 交互（角色筛选条计数真值断言/轮次播放器/胶片轨走查）、搜索语法（`#N` 直跳/`role:` 算子/零命中文案）、Context（增长曲线/图表模式切换/胶囊下钻档案弹窗）、Audit（四域导航/目标列表）、Skills 与 Files（斜杠调用行/文件行全路径 + 搜索过滤）、Wire 与 Replay（无捕获结构面不崩 + 播放推进）、Score（六维雷达/维度卡/成员切换/评分导出钮）、离线 HTML 导出往返（file:// 直开离线内核起播 + 离线评分导出——下载文件经 `saveAs` 落定扩展名，规避 Playwright 无扩展名临时文件被 Chromium 按纯文本渲染）、上传对话框（字段在场/取消可关）、回收站全旅程（删除 → 回收站 → 恢复回流——一次性夹具 spec 内自行 HTTP 导入，自包自净幂等重跑）。机制承袭 opsbot web E2E 并适配自含架构：环境五件套隔离（e2e.db/独立端口/独立 CONTEXT_INSIGHT_HOME/日志静音/不用 start.sh）、播种即冒烟（global-setup 经真实 HTTP 导入端点播 mini-bundle + E2E 自有工具语料 e2e-tools01 + claude solo 会话）、browserConsole 验收门（绿用例抛未捕获 pageerror 即判负，失败落盘 console 诊断）、teardown 端口回收不变量、POM 层三页对象；构建按 BUILD_ID 新鲜度复用，复跑秒过。架构文档与已知陷阱见 `tests/e2e/README.md`
+- 【大 run Context 页收敛】百级成员的 run 在 Context 页自动进入聚焦模式：曲线默认只画峰值 Top-K（236 条曲线墙不可读也难渲染，快捷控件新增「峰值 Top」一键回焦、「全部」仍是显式回全显的口）、图例胶囊折叠为预览 + 展开滚动区并带搜索框按名过滤（百级组里找任务是刚需）——曲线墙/胶囊墙两处爆炸一并收敛；小 run 与单会话行为不变
+- 【Perf 工具耗时卡】Perf 从成员单维度扩为「成员 × 工具」双维度：新增工具维度耗时卡，左右排版（左工具耗时统计、右下钻详情面板——master-detail，lg 对半分栏、窄视口面板沉底；默认选中 Σ 最高工具，收起给占位空态）——左列与同页热点排行同门语法（inset 分组列表 + 行悬停 + chevron 弹性选中 + 标签上/值下统计列 + 悬停浮现的下钻角标）：逐工具行（统计列 = 总耗时 + 最大耗时双列居中——均值会撒谎，最大是长尾的直觉读法；p50/p95 分位保留在悬停读数；成员构成归右栏分解面板单一出口——行内堆叠条试过即撤：Top-3 段 + 灰「其他」段的构成信息右栏已有、条上留不下有效信息），右栏成员分解面板（全量成员按 Σ 降序 + 比例条 + 搜索框双匹配显示名/原始 taskId——成员是无界维度，solo 1 个到大 run 数百个，纵向清单 + 搜索可扩展，超限折叠「展开全部」）；计时口径诚实：DB durationMs 真实值优先，cpx/wire 捕获的零计时按 wire 轮间隙推导回填（toolCallId 级，与 turns 轮间隙增补同门同缓存），源缺时间且无 wire 的调用如实计入「无计时」不进分位，Task/agent 派发窗口（含子代理整段执行）带「派发」徽标另计、不进 Σ 工具执行时长（防与 Σlatency 双计）；skill 族元调用（skill / load_skill 等提示词注入类技能加载）行带紫色「技能」徽标、悬停解释耗时语义（非工具执行——isSkillRelated 由采集侧 tool-conventions 单一源判定透传）；下钻三级：工具行 → 右栏成员分解（master-detail）→ 成员行展开逐轮调用清单（`#N` 轮次序号——与 Turns `#N` 直达同口径，看到即可搜；卡片内滚动窗——多调用成员不撑长面板；同轮多次调用聚合一行 `×N`、Σ 降序找慢轮、无计时轮如实标「无计时」，数据全由 tool-stats 单一源嵌入矩阵格——离线导出档案零额外端点）→ 轮次行点击跳转该轮（`?turn=` 深链 + 轮详情深钻）；工具行角标 = Turns 搜索语法深链（`tool:X` 全成员），搜索胶囊自动预填执行、`?q=` URL 镜像可分享；时长单位阶梯：亚秒级一律 ms 整数、满 1s 才用 s、依此类推 min/h——`X.Xs` 四舍五入把短调用挤成 0.0s 的问题根除（共享 fmtMs 单一源，TurnDetail 本地 formatLatency 收编）；离线 HTML 导出内嵌同款静态档案
+- 【启动器浏览器熔断】`./start.sh` 服务模式支持 `CONTEXT_NO_BROWSER`：置任意非空值时跳过「Server ready」后的开浏览器（打印地址代替）——与 cpx 侧 `openBrowser` 同名同语义。此前 CI/headless/测试环境跑 start.sh，WSL 分支是绝对路径 exec（`/mnt/c/Windows/System32/cmd.exe`，PATH 桩拦不住），会在用户 Windows 桌面真弹浏览器
+
 
 ### Changed
-- 【品牌主体更名】显示名、包名、CLI 别名、数据目录与环境变量前缀（`CANNBOT_*` → `CONTEXT_*`）全面切换为 Context 品牌；`LAKE_*` 前缀不变；来源类型、信封键、服务标识等数据契约保持品牌中立，两品牌共用同一值
-- 【wire 扩展信封更名】捕获/导出 jsonl 的扩展信封键 `x_cannbay` 更名为 `x_lake`（与 cpx ≥ v0.1.12 配套单轨读写）；携带旧键的行按无扩展导入
-- 【基准测试填报中性化】原「CANN-Bench 填报」更名为「基准测试填报」（评分目录、schema 与 API 同步更名）；存量旧目录、旧 schema 填报自动兼容读取
-- 【文档全面更新】README、使用手册、数据湖格式规范与 agent 指引按新品牌与现行为重写
-- 【无桥子代理可见性】Turns 时间线新增「未关联」子代理泳道：无派发桥的子代理轮次（团队成员/续会流）此前整组不可见（能搜索到但时间线上消失），现按启动时间就近挂载展示，带「未关联」标识
-- 【子代理捕获归档】cpx 按成员身份归档子代理捕获流：同一成员重启续跑不再裂成无归属新文件，导入后桥接完整
-- 【兜底必达】子代理回传调用不再被误识为派发（自锚桥既不渲染又抑制兜底）；只有锚到主链的桥才免除「未关联」兜底，锚不到的全部走兜底展示
-- 【后台派发元数据】cpx 后台（异步）派发的子代理 meta 补齐派发 id/名称，桥接走直连路径
-- 【Turns 角色筛选多选】Turns 时间线左上角的角色筛选从单选升级为多选并集——可同时勾选 user / assistant / system 等多个角色一并查看（选中的 chip 高亮），再点一次取消单个角色，All 一键清空回全显
-- 【声明覆盖总览】Skill 审计报告新增「声明覆盖总览」：对账时刻的**声明原文快照**整篇原文呈现，三色直接涂在文本上——绿=已触达、黄=未验证、灰=未建模，颜色即覆盖位置，hover 色块看该段指令摘要（含 root 组合声明归层）；指令覆盖与可评文本覆盖双指标同屏分报；原文以 skill_body 为基准按单元顺序精确子串重建（空行/代码围栏等间隙原样保留，快照逐字节可信）；旧报告（无原文投影数据）回退原指令视角视图
-- 【仓瘦身】删除全量设计文档（docs/），仓库更精简（运行时行为与 npm 包内容不变）
-- 【git-lfs 零手工安装】LFS 模式不再要求用户手工装 git-lfs：任一数据仓动作即后台预热自举（并发去重防重复下载），下载源自动回退 GitHub 直连 → 公共镜像（sha256 pin 校验，镜像只是运输通道）；品牌更名前旧数据目录里的同版本私有件直接拷贝复用，免重复下载；数据仓导入路径同样自愈（此前仅上传路径自举），失败指引保留三条出路（自备镜像 / 系统安装 / LAKE_LFS=0）
-- 【LFS 未启用错误分诊】托管平台项目级 LFS 未启用（如 GitCode "Access forbidden. project lfs not enabled."）此前被误分诊为「令牌无推送权限」把用户引向换令牌（真机事故：令牌确有权限）；现六分类新增 lfs-not-enabled，弹窗不再误弹凭据引导，白话文案直说凭据无问题 + 首选出路 LAKE_LFS=0（实测 GitCode 普通代码仓不提供 LFS 服务，项目设置开关无效——连其官方含 LFS 指针的仓同样报错）
+- 【六维能力图换装】评分卡雷达图从早期军用磷光屏的暗黑外壳换成工作台同款主题版：扫描态势全保留（旋转扫描波/圆形量程环/方位刻度/平滑数值形/顶点脉冲/否决转红色警报），配色全走主题变量——浅色深色主题自动适配，不再与界面风格打架
+- 【测试分层归置：e2e 之名让渡给浏览器套件】存量 vitest 端到端套件（导入/数据仓/导出/发包哨兵，31 文件）从 `tests/e2e/` 迁至 `tests/pipeline/`（git mv 保留历史，套件内相对导入零变更）——「e2e」语义统一指向新上的 Playwright 浏览器套件（`tests/e2e/`），数据管线层按其实质如实命名；`npm run test` 升级为一条命令全覆盖：pretest（tsc + 库预备）→ vitest（ut + pipeline）→ Playwright（自举 boot-server），单层入口保留（`npm run e2e` / `npm run test:pipeline`）；npm 脚本同步：`test:e2e` → `test:pipeline`、`test:all` 退役（被新 `test` 完全包含）；vitest projects include、脚本注释、run-tests.sh（含浏览器二进制自愈补装）与 ut 内文件清单断言同步更新
+- 【Context 组详情改右侧档案弹窗，Agent 概览面板退役】Context 页的下钻（胶囊箭头唯一入口）改为右侧滑出弹窗——该 agent 的上下文档案：身份行 + 关键四数（峰值/窗口水位/增速/缓存命中，水位按风险着色）一次扫读 + 独立增长趋势小图（逐轮轴、缓存读份额、80/100% 窗口参考线、/compact 标记；多实例组灰线同框）+ 风险时刻胶囊（只留 /compact 落差与越限警告，无风险整节隐去）+ 缓存效率卡（峰值轮构成 + 命中/节省/无缓存倍数）；页面上的 Agent 概览网格整体退役——数字全归弹窗，页面只留曲线形状
+- 【Graph 时间轴重试共线】同一节点的多次尝试此前逐次纵向叠行（泳道被重试撑高、纵向扫读断裂）；现共线一行横向续写——失败条 → 重试等待虚线 → 重试条，仅时间真重叠的并行重试才叠行避让
+- 【离线 HTML 导出全 run 可用】run 页头的离线 HTML 导出从 solo 专属扩展到全部 run（多成员 bundle 同样可导），且导出文件内嵌的就是真实 run 工作台本身——与 live 默认视图同款的观测面（全员成员、搜索/轮次直达/轮详情含输入窗口重建，旧版离线详情缺位不再）单文件离线可交互；此前与工作台平行的会话查看器实现退役，由工作台组件单一真相源取代
+- 【上下文增长趋势图缩放语义】Context 趋势图缩放从整图相机放缩改为 Perf 同款时间窗：图框恒定，Ctrl/⌘+滚轮/拖拽/工具条只作用于时间轴，窗口内曲线重采样、刻度随窗进位、y 量程与 80/100% 参考线随窗口自适应
 
 ### Fixed
-- 【LLM 提取重试无限转圈】Skills 页「提取/重试」的重试轮询把 restart=1 固定在每一次轮询请求里——失败 job 每次轮询都被服务端强制重启，且响应恰是重启瞬间的 loading:true，失败态永远轮不到（表现为「提取中…」无限转圈、服务端每 5s 重 spawn 一次 claude CLI；真机事故：CLI 路径不对 ENOENT 后连续 spawn 400+ 次）；现 restart=1 只随重试首发请求，轮询一律 restart=0，失败即刻停在失败态展示「重试」
-- 【存量仓数据 Type/算子生成结果丢失】数据仓改名前上传的旧会话 meta 用旧信封键，新版读侧只认新键——cannbay 视图与导入清单里旧数据的模型类型、算子生成结果、提交人等 meta 字段全部空失，导入旧会话时框架补列同样静默失效；现 meta 读侧兼容新旧两键（新键优先，捕获行扩展仍按单轨新键不回退）
-- 【LFS 指针报错白话化】LFS 模式关着导入 LFS 数据仓时，materialize 出的 `.jsonl.7z`/`.jsonl.gz` 是未还原的 LFS 指针文本，直接喂 7za/gunzip 会报出用户无法理解的「Is not archive」/zlib 错误（真机事故：旧 LFS 数据仓导入拿到 7za exit 2 原文）——压缩统一入口探测指针签名（`version https://git-lfs…` 首行），命中改抛通俗指引（设置页开启「LFS 模式」/ `git lfs pull` 还原），lake 导入与本地导入共用此防线
-- 【设置页保存洗掉 LFS 模式】设置页「保存配置」的 PUT 只写地址/分支/目录，lake-config.json 里的 `lfs:false`（平台不开放 LFS 的仓关闭 LFS 模式后的落盘形态）每次保存都被静默复位为缺省 true——用户关了开关、保存一次设置、首次上传必再撞「project lfs not enabled」（真机事故：切新仓后仍报 LFS 未启用即此因）；现设置页新增「LFS 模式」开关（回显服务端现值、保存透传），PUT 请求体缺省 lfs 时保留现有值不洗掉，报错文案同步指向设置页开关
+- 【回收站恢复后主列表不浮现】回收站「恢复」成功后原先走 `router.refresh()`——但主列表的 items 是客户端 state（分页/搜索局部更新），refresh 只换 props 不重置 state，回流的会话行不会出现，侧栏徽章与主列表自相矛盾（badge 4 / list 3），要手动刷新页面才能看到回流资产。现恢复成功改为整页 reload（与删除流程同款出口），徽章/主列表/回收站三处 UI 一致浮现
+- 【鼠标侧键后退离页】run 工作台的回退此前是内存栈 + 单 history 条目（切 tab 用 replace）——浏览器历史里没有工作台条目，鼠标侧键/浏览器返回钮一按直接退回主页而非上一个工作台动作。现条目栈以浏览器历史为单一真相：每个工作台动作（tab 切换/turn 深链/成员钻取）pushState 真实条目（视图态随条目 state 走、URL `?tab=` 镜像可分享），侧键/浏览器返回钮与工作台返回钮同一出口逐步回退、前进键重放（此前内存栈无前进），刷新后条目序保留仍可回退；离线 HTML 导出（file:// 宿主 pushState 抛错）自动降级内存栈，返回语义原样保留
+- 【胶囊展开首行晕染】滚动渐隐 mask 此前对容器顶/底各 14px 无条件透明（不感知滚动位置），增长趋势图下方胶囊区展开后贴边首行被晕染。现渐隐滚动感知：只在「该侧真有滚出视口的内容」时出现（滚过 → 顶部、未到底 → 底部），静止贴边行完整显示；全部 6 处滚动渐隐容器（Context 外壳/胶囊区/档案弹窗体/Turns 搜索列表/子图与概览侧栏）统一收编 ScrollFade 组件
+- 【Context 页双层卡片】tab 外壳自带边框卡片与图表 Card 叠了两层——外壳改工作台 tint 约定（rounded-2xl 底色、无边框无阴影，与 Perf/Overview 同款），图表 Card 成为唯一卡片层
+- 【上下文增长曲线未从 0 生长】初始轮（0-token 派发消息，各 agent 的首个原始轮）此前被统计过滤（`totalTokens<=0`），主图与档案趋势小图的曲线一律从首个测量值起步。现以初始轮为原点锚：曲线从基线（0）生长到初始上下文——初始轮有独立轮号/时刻时在轴上占自己的槽位，无独立初始轮时锚在首数据轮处（零宽 riser）；时间轴域同步自初始轮起算（初始轮不占 y 量程与命中域）；锚只进绘制序列与命中域，统计口径不动；初始锚可悬浮、原地点击跳转该 user 轮（tooltip 派发轮形态：初始轮标注 + 消息摘要 + 无 token 计量说明）；主图线组补 plotClip（锚可能在缩放窗左缘之外）
+- 【技能加载不再伪造工具调用行】读 SKILL.md 类技能加载（claude Read / codex shell 读类命令）此前会合成 `skill/<name>` 假工具调用混进工具统计——Overview 的工具列表多出 `skill/data-analysis` 等幽灵工具。现 SkillEvent 由 turn-split 单点直出（关联真实工具调用并继承其真实时间戳与时长，此前时长恒 0），工具面只显示真实调用，读 SKILL.md 的真实工具行带技能关联标记
+- 【codex 会话技能原文恢复断链】Skills 面板/Audit 的「SKILL.md 原文」恢复此前只认 Skill 工具注入与 Read 两条通道，codex 的 exec_command（cat 读 SKILL.md）不在其中——正文必在却恢复不出来。现补 shell 读类命令通道（终端输出剥元数据壳后即原文），含行范围截断（head/tail/sed -n）的部分读取标记
+- 【codex 子代理派发进 Audit 对账】Audit 的 Agent 域目标此前只认 task/agent/subagent 三种派发工具，codex 的 spawn_agent 不在内——子代理明明派发了 3 个，Agent 域恒显 0。派发判定统一收归 dispatch-tools 注册表（spawn_agent 自动纳入），事件名取 codex 返回的子代理昵称（与泳道/Execution 一致），无昵称时回落任务书角色名
+- 【链式命令漏检技能加载】shell 读类命令检测此前只看整条命令的首 token，模型惯用的 `echo '==='; cat …/SKILL.md` 链式命令因首 token 是 echo 整段漏检（真机现场：主代理的 cannbay-report 技能加载丢失）。现按 `;` `&&` `||` `|` 分段独立判定（引号内不切）
+- 【contextBay 数据源列表 codex 类型空缺】lake 会话导入表的框架徽标分支漏了 codex（与 dsh）——codex 会话上传 contextBay 成功，但数据源列表 type 列恒显「—」（客户实测「type 识别不出来」）。现框架族全覆盖（claude/opencode/cannbot/codex/dsh 五家徽标），RunsTable 徽标色板同步补 dsh；上传链路实测本身全通（捕获行直传 / 原生行 .native 双路径 + meta framework 落仓），缺口只在展示层
+- 【codex 技能使用恒空（Skills 面板零事件）】技能加载信号的 wire 双形状单源化（新模块 `skill-invocations`）：codex 无 Read 工具（0.162 实测工具面仅 exec_command/write_stdin），skills_instructions 协议让模型用 shell 读类命令（cat/sed/head/tail/less/more/nl）自行读 `<skill>/SKILL.md`——此前检测只认 claude-code 的 Read 形，codex 会话模型真实调用技能但 SkillEvent 永不产生（真机复现实锤）。现 claude-jsonl（cpx 捕获路径）与 codex-jsonl（原生 rollout 路径）双接线，合成 `skill/<name>` 调用进 turn-split 既有通道；排除面收敛误报（find/grep/ls 非读类首 token、`cat > path` 重定向写入、claude 的 Bash cat 不认——其技能加载主通道是 Read）
+- 【codex 原生会话工具时长恒 0】codex-jsonl 适配器补 ToolCallInfo 时间戳：function_call 行 ts → startedAt、function_call_output 行 ts → completedAt（经全局 call_id 索引回填）——此前两字段恒缺，turn-split 回落轮时间且 durationMs 恒 0（真机实测原生会话工具时长全 0）
+- 【捕获件 reasoning token 读侧兜底】claude-jsonl 的 mergedUsage 在信封（cc-wire-round.reasoningTokens，权威通道）缺席时回落读 usage 块的 `reasoning_tokens`——旧版 cpx 捕获的存量会话重导入/增量刷新也能恢复思考 token 计数，不再依赖上游发版
+- 【Node 门槛实测收紧至 22.14】engines / 启动器 / start.sh 的 Node 版本门槛从 22.12.0 抬至 22.14.0：better-sqlite3@13 预编译二进制在 22.13 及以下加载即段错误（全新隔离环境对真实发布的 npm 包二分实测——22.12.0 / 22.13.0 SIGSEGV、22.14.0 起探针通过），旧门槛让全新机器装得上包却起不来（停在端口日志后 core dump）；README 安装要求与发包契约测试（engines 断言）同步收紧；报错文案归位——段错误来源是 better-sqlite3@13（此前误写为泛指依赖），commander@15 的 22.12 要求被 22.14 覆盖
 
-## [0.2.40] - 2026-10-22
 
-> 对齐说明：npm v0.2.39 为 v0.2.38 撤回重发的换号版（产物基线不含 git 侧 [0.2.39] 段与本段内容）；自本版起 npm 产物与 git master 对齐。
+## [1.0.2] - 2026-11-05
 
 ### Added
-- 【Run 观测工作台】opsbot workflow 导出包（workflow.json + sessions/）可整包导入为 Run：关系图工作台（缩放/平移/框选、节点详情侧栏、模式与透镜切换）、时间轴、指标透镜、失败归因与重试账本；无图注解的 Run 呈空态引导而非空白画布
-- 【Run 图性能与观感】相机模型重构、布线简洁化（端口分布、平行段错开、留白压缩）、玻璃浮层材质、走线统一右行、成员会话计数改至页头
-- 【bundle 数据仓双向通道】已导入 Run 可整包上传数据仓 `opsbot-bundle/` 专区（原子整体替换，治理/LFS/压缩与会话上传同链路）；数据仓 bundle 列表一键导入回本机，导入界面与会话导入同构
+- 【回收站】删除的资产先落侧栏回收站快照（「恢复」回流为独立会话，「彻底删除/清空」不可逆且需两步行内确认）——删除不再是一锤子买卖
 
 ### Changed
-- 【工具真实时长采集】工具调用不再显示恒零时长——claude 会话从 tool_use/tool_result 行时间戳、opencode 会话从 part 时间列恢复每次工具的真实起止与执行时长（此前是所属轮时间的复制品）；无时间信息的源（opencode 2.x、旧导出件）自动降级维持原行为，评分 D4 工具时长与性能分析的区间推算自此有据可依
-- 【workflow bundle 结构校验改为随包 schema】insight 导入 workflow bundle 时改用包内 `workflow.schema.json`（draft-07，ajv）做结构校验，与 opsbot 同源、不再各写各的校验漂移；手写校验收缩为 JSON Schema 表达不了的跨节点检查（成员 id 全树唯一、关系端点解析）与 version 前向兼容闸。包内缺 `workflow.schema.json` 直接拒绝（不回落手写）
+- 【主页资料库形态变革】主页重设计：五张指标卡合并为一块毛玻璃总览横幅；资产大表改为分组列表（每行 = 框架渐变 App 图标 + 常显小勾选角标 + 标题/元信息 + 右侧定宽对齐微型统计列，行操作悬停浮现——DB 导出移至详情页）；类型过滤改分段控件（滑动指示条）；批量操作收进底部浮动毛玻璃操作条（对比/批量删除）；最近导入同款列表化。功能口径不变（搜索/分页/对比/删除/上传/导入向导全保留）
+- 【加载态与大列表性能】全站加载语言统一为呼吸占位卡（Turns/数据仓/Context/Replay/Skills）；大 run 的 Turns 万行级列表分块取数、分帧装载、就绪一次性展示——装载到展示全程无冻结无滴入，展示后滚动只处理可视区行
+- 【Turns 搜索全能语法】搜索框升级为一框全能查询：空格多词 AND（此前「foo bar」按字面连串搜索、几乎必然零命中）、引号短语（中英文引号均可）、`-词` 排除噪声，以及可组合的结构化算子——`role:`/`member:`/`agent:`/`tool:`（按角色/成员/子代理/工具筛轮）、`error:true`（不猜错误文本直列出错轮）、`thinking:>5k`/`dur:>10s`/`tokens:>10k`（阈值筛长思维链/慢轮/大轮）、`after:15:30`/`before:`（时间窗，HH:mm 按轮自身日期取当日时刻）；单词查询语义不变。命中索引改为全量展示（此前只取前 50 条）；过滤面升级为多维组合（来源 × 工具 × thinking 跨维相与、维内多选）；多词全量高亮与详情自动展开；导出查看器离线同语义（此前离线侧错误路因投影缺列永久降级，现已透传）
+- 【效率分布图】Perf 的 TPS/TPOT 效率分布图改为满铺宽卡片（此前固定宽度居中、两侧留白显小）：字号、统计条与悬停气泡同步放大，折线描画、面积渐显、峰值点弹出与统计条错峰的轻量入场动效（指标切换时重放），悬停读数与时间窗缩放/平移操作不变
+- 【导入向导】来源选择重做为双源大卡（本地/数据仓即选即用，路径/格式/快捷直达内聚为轻量工作区，取代多层表单标签）；选择会话的列表改为定宽纪律表格，长查询文本不再撑破卡片边界
 
 ### Fixed
-- 【斜杠命令技能调用计入统计】Claude Code 以 `/技能名` 展开加载的技能（如 `/day0-inference`）此前不计入会话技能统计（该通道无工具调用）——现识别「命令标签用户轮 + 技能注入系统轮」形态并按 invoke 计数；内置本地命令（/clear /skills 等）不受影响，存量会话重导入后自动恢复
-- 【bundle schema 全程携带】导入时随包 `workflow.schema.json` 落盘 run 目录、上传数据仓时原样进仓——cannbay 包恒带 schema，重导入不再豁免结构校验；存量无 schema 的仓内包不再兼容（用带 schema 的包重新导入后上传）
+- 【#N 轮次直达误报 + 交互重构】`#25` 这类轮次直达此前在客户端「已加载分页」里找——没打开过任何轮次（无当前会话可依）或目标轮在加载窗口外（长会话两段式加载未拉齐）时，明明存在的轮次被误报「当前会话未找到」。现改为 run 级服务端解析（跨成员定位该轮次号，真相源在 DB）：跳转不再依赖加载状态。交互同步重构：敲下 `#` 即时提示语法；单命中直接跳转；多个成员会话都有同号轮时弹出下钻选择列表（当前会话置顶带「当前」徽标，键盘 ↑↓/Enter 与点击皆可，Esc/外点关闭）——不再先跳再塞无法关闭的提示卡片
 
-## [0.2.39] - 2026-10-20
+## [1.0.1] - 2026-11-04
+
+### Fixed
+- 【超大汇总数字 500】修复长会话的 token 总量/时延超过 32 位整数上限（约 21.4 亿）时触到该会话的任何页面整条报 500 的问题（实测长活会话的代理耗时跨度与外部报告的会话 token 总量均已越界）；会话/代理耗时与 token 的汇总存储升 64 位，越界会话的统计与详情页恢复正常展示
+
+## [1.0.0] - 2026-11-03
+
+### Added
+- 【上传结果提示】上传到数据仓后顶置 HUD 即时反馈（毛玻璃卡）：成功绿勾自动退场并关弹窗、失败红叉错误驻留弹窗内、run 包缺正文告警琥珀警示且完整清单驻留——全上传面一致（此前只有主页行状态可见，run 页与导出查看器反馈缺失）
+- 【单轮耗时】Turns 左列每行的时间从「模型耗时」（latencyMs）改为「单轮耗时」（turnMs，服务端投影两口径同源）：一轮从开始到自身工作完成的墙钟口径——claude 格式会话（全部 proxy wire 捕获 + claude 原生）与 codex 原生工具执行发生在生成之后，单轮 = 生成 + 最慢并行工具（同轮多工具并行取 max，工具有效时长与行内 toolCalls 投影同源：DB 正值优先、wire 兜底）；opencode 原生消息时长已覆盖 part（工具）执行，保持原值防双计；生成时长缺失时回落工具时长。工具有贡献时悬停显示「模型 + 工具」分解。run turns 与 member-turns（session 视图/导出查看器）两面同口径
+
+### Fixed
+- 【原生会话 token 统计】claude-code 原生会话的轮次/token 统计此前被日志重放虚增——resume/compact 后 claude-code 会把历史响应原样重写进会话文件，重复副本被当成新轮次重复计费（实测两天长会话主线 token 虚增近一倍、多出约 500 个幻影轮次），与 proxy 捕获的同一会话对不上；现按响应签名去重，原生与 proxy 口径一致，导入前预览同口径。存量已导入会话需重新导入（或触发全量重建）自愈
+- 【刷新不打断阅读】run 工作台的自动同步/手动刷新不再整页重置：正在看的轮次列表与选中轮详情原地增量更新（新轮追加、内容在位刷新），滚动/展开/搜索/筛选等阅读状态全部保持——此前每次刷新（运行中的会话每几秒一次）都会把阅读位置清场；仅源回溯触发的全量重建仍整页重建
+- 【opencode 原生工具耗时】opencode 2.x 原生会话的工具调用此前恒显 0ms（v2 适配器未读源内工具起止时间），现落真实 per-call 时长；存量会话刷新即自愈
+- 【lake 导出工具时长 round-trip】经数据湖导出再导入的会话，工具真实时长此前只在湖导入一条路径恢复（编排层补列）——直接文件导入与增量刷新都会把导出件声明的 per-tool 时长打回 0ms；现声明进标准导入管线（全路径一致），导出端时长字段补齐
+- 【工具时长推导】cc-db-turn 原生导出（lake bundle `.native`，assistant 行 ts = 请求发出、duration_ms = 请求→响应、工具结果载体行与响应行同戳）的 wire 轮间隙窗口推导不再失效：此前 `passChain` 只认「载体行 ts > 响应行 ts」的 proxy wire 模型，同戳（间隙 ≤ 0）窗口全被丢弃——真机 137 成员 bundle 4168 个带工具轮全部拿不到工具时长，Turns 单轮耗时退化成纯模型耗时。现按窗口逐个判别时间戳模型：同戳窗口改取 [响应行 ts + duration_ms, 下一请求行 ts]（proxy wire 模型原口径不变），全量成员恢复毫秒级真实窗口（该工作流工具实为缓存读/瞬时命令，Σ 窗口 44.4s、最大单窗 43ms——单轮 ≈ 模型耗时即诚实真相，tooltip 现出分解）
+- 【工具耗时保真】wire 捕获 tool_result 历史重放不再覆盖首现载体：cpx 逐请求落盘 messages 历史，同一 tool_use_id 的结果行随每个后续请求重复携带（真机实测 1007 个唯一结果被 2310 条载体行携带、73% 重放 2–5 次）——last-wins 会把 completedAt 滑到最后一次重放的请求时刻，42ms 的 Bash 被记成 50653.9s，连带 nativeBoundary 的 toolEnd 推算与后续轮 latency 一并被撑爆。现首现胜出（仅首现缺有效时间戳时允许后续载体回填），工具时长回到真实窗口；重放行不产生额外轮次；存量会话重导入即自愈
+- 【wire 捕获降噪】proxy 捕获的 system 组件噪声治理：cpx 逐请求原样落盘 system 数组（system 组件无 message.id，捕获侧无法像 messages 历史那样按 id 去重）——token 预算倒计时（`<total_tokens>N tokens left</total_tokens>`，纯 wire 簿记，真机实测一场会话 4213 个 system 轮里 4140 条是倒计时）与逐请求随行的静态注入曾全部物化为 system 轮。现读取层将倒计时行随处剥除（纯倒计时载体——字符串/单块/拼接在静态提示尾行三种形态——剥后为空整行跳过），system 注入按剥除后内容去重（同文首现保留、重复跳过，倒计时数字逐请求变化不再破坏去重），对话时间线收敛为「每种注入一次、落在首现位置」；真实系统事件（上下文告警、hook 注入、CLAUDE.md、日期/环境变更）全保留，user/assistant 轮不受影响；wire 保真不受影响（wire 回放 / skills 全集 / 全文上下文均读原始捕获，不经 Turn 表）；存量会话重导入即自愈（位次漂移触发全量替换）
 
 ### Changed
+- 【Turns 搜索·工具名第六路】Overview 的 Tool Calls 面板把工具名当第一性标签展示（尤其 MCP 工具——名字不出现在 args/result 里），但轮次搜索五路匹配（content/摘要/args/result/error）不含工具名，搜面板里的名字零命中（跨页签可发现性断裂）：`matchTurnSearch` 增第六路 `toolName` 匹配（载体优先级 args > result > error > 名，纯名字命中上下文带调用内容预览），命中面板新增「工具名」字段标签，跳转后名字含关键词的工具调用自动展开（含同前缀兄弟工具）；`TurnHighlight.matchField` 改由 `TurnSearchItem` 单源派生，消灭多处复制的类型联盟（此次漂移即其所致）
+- 【Skill 覆盖度降级文案】按会话实际框架分流细化：opencode/cannbot 原生只说「系统提示只在运行时请求、不落盘」、codex 原生只说「rollout 布局里系统提示在 developer 消息内、读取暂未接入」，各附行动指引「经 cpx 代理捕获重跑该会话即可获得全集」——此前一条长句把两框架原因一锅端，用户要在长句里找跟自己相关的那半句；sourcePath 缺失文案补「重新导入该会话可恢复」
+- 【Turns 拉载】成员会话轮次由「手动分页续拉」改为两段式自动拉齐：首页小页快出首屏，剩余轮次自动补齐到全集（服务端新增 offset 绝对偏移补拉参数），「加载更多」仅在补拉中断时作为手动重试入口出现；补拉追加渲染经显示对象身份缓存与既有 content-visibility 护住，换选与筛选不随全集变大变慢
+
+## [0.2.41] - 2026-10-31
+
+> 更名说明：主体品牌自本版起为 Context-Insight（npm 包 `context-insight`，命令 `context-insight` / `ctxi`，数据目录 `~/.context-insight/`——首启自动迁移 `~/.cannbot-insight/` 存量数据，cpx 捕获目录同款迁移）；`cannbot-insight` 转为同内容变体包（`scripts/pack-cannbot.mjs` 打包期翻转），老用户的部署脚本与目录习惯在变体包内不变。数据格式契约不随品牌变，两包数据完全互通。
+
+### Added
+- 【数据仓上传】上传捕获会话时可选「同步上传本机原生会话」：自动定位同一场对话的原生记录（已导入行直取；本机磁盘按框架发现——Claude / opencode / DSH 按会话 id，Codex 按捕获时间窗 + 首问锚点），未导入的先自动导入，与捕获一并落 `<sid>.native/` 同 sid 双记录，捕获/原生双视角可对账；Web 上传弹窗勾选即预检（找到/未找到白话呈现），CLI 同款 `--with-native`
+- 【Turns 走查】左列新增角色多选筛选条（胶囊带计数）：主链与子代理泳道行同口径过滤（user / assistant / system / 命令 / 续接 / 压缩等，按已加载轮次实际出现的角色列出），多选并集、「全部」一键清空；派发行被滤掉时其泳道有匹配轮仍留原位，无匹配的泳道整块让位
+- 【子代理观测】复用会话（首发 + 返工同 sid）派发窗口配对：每次派发的桥只锚定自己窗口 `[dispatch_i, dispatch_{i+1})` 内的轮次——ingest 建桥、读侧重算（读时自愈旧数据，response 钳到下次派发时刻）与 Turns 泳道三处同口径，两窗不再互相包含；子代理块按派发时刻正序并入主时间线（发现序倒排导致的全局 turnIndex 逆行消除）；opencode 2.x subagent 工具方言（`args.agent` 类型字段）识别，task-id-xml 结果正则容忍 JSON 转义引号；后台异步派发黄徽章（Turns 泳道行 + 派发事件列表）；Perf 泳道行显示子代理类型徽章与派发步骤主标题（原生形态泛化名不再独占 X 轴）
+
+### Changed
+- 【品牌主体更名】显示名、包名、CLI 别名（`cbi` → `ctxi`）、bin 文件名、数据目录（`~/.cannbot-insight/` → `~/.context-insight/`，首启原子迁移，git-lfs 私有件跨代复用旧目录产物）与环境变量前缀（`CANNBOT_*` → `CONTEXT_*`）全面切换为 Context 品牌；数据仓名 `CANNbay` → `contextBay`；smart-agent 服务标识、mate-agent 临时目录、导出文件前缀（`context_session_`，导入侧双前缀并认存量 `cannbot_session_` 件）与 lake git 机器提交身份随品牌切换；`LAKE_*` 前缀与 wire/来源类型等数据契约保持中立（来源类型新值 `context-insight`、旧值 `cannbot-insight` 读侧兼容）；cpx 主包同步更名 `context-cpx`（bin 仍为 `cpx`）
+- 【中性化】评分与提取链路去域名词：D3「CANN-Bench 评分」更名「基准测试评分」（子项 id `D3.cannBench` → `D3.benchScore`，UI 文案与 cannbench.com 引用改中性「排行榜」表述）、`op-bench` 存储与 API 全链更名 `bench-report`（目录 `bench-reports/`、schema `workflow-session-bench-report`、env `SCORING_BENCH_REPORT_DIR`；旧目录 `op-benchmarks/` 与旧 schema 读兜底——存量填报无感迁移，读旧写新）、提取插件默认名 `cann-ops` → `workflow-ops`（配置值不变，已部署的 `workflow-extract-plugins.json` 无感）、任务类型判定与工作流声明的算子域词表外置为包根 `task-classes.json`（代码回落最小词表，类 id `operator` 为存量数据契约不变）、`ascendc-*` 子代理/技能示例名中性化为 `acme-*`（夹具与文档同步）
+- 【评分 D1】目标覆盖对账纳入工作流范围声明：载入的工作流 skill 规程声明了交付物范围时，验收口径以声明为准——首条消息里超出声明范围的条目判范围外、不计入覆盖分母（设计阶段工作流不再因「开发完整版本」类超范围条目被扣分），全部目标点范围外时该项按不可评判处理；mate 评审材料同步携带声明原文
+- 【返回导航】返回钮移至导航行最左（与 tab 同行），品牌区独占顶行最左上角；返回语义改为回退上一个工作台动作（tab 切换、turn 深链、成员钻取逐步回退，栈空回上页/首页），图标重做为 圆头 chevron——有可回退历史时亮出残影双 chevron，悬停轻推、按压回缩（纯 CSS）
+- 【全局导航】run 工作台导航重做为凹槽分段控件：居中凹槽轨道 + 浮起卡舌活跃指示器（与域导航/成员轨道同一语法），图标彩色常驻（非活跃压暗、激活点亮）；顶栏间距收紧、chrome 与导航错峰入场，版本号收进等宽徽标，加载态导航骨架与真实导航同形
+- 【评分雷达】六维能力图重做为军用扫描台风格：深色磷光屏 + 锥形扫描波（亮边在前、尾迹渐隐，卡被否决时整屏转红色警报）、圆形量程环与方位刻度、十字准线、CRT 扫描线与暗角、四角取景框和 SWEEP/ALERT 状态灯；全部 CSS/SVG 动画，reduced-motion 时静止
+- 【Score tab 重设计】run 工作台 Score tab 沉入浅灰画布（对齐其它 tab 卡片语法）：成员选择改为单行凹槽胶囊轨道——浮起卡舌选中成员，成员再多也不折行挤占竖向空间（Wire/Replay 共用同款选择器一并受益），可滚动方向以边缘渐隐提示、活跃卡舌自动滚入视野、悬停时纵向滚轮转为轨道横向滚动，大成员量（>8）轨道头挂搜索胶囊（输入即过滤，直达任意成员）、尾挂 命中/总数 计数；滚动权收敛到壳层，消除内外双滚动；雷达与维度卡改按面板宽分列（容器查询——窄窗口不再误落单列，雷达全宽巨图、维度卡被挤到长滚动底部的问题消除）；总分大字去网格底纹与角标框，视觉收敛为简洁卡片
+- 【滚动条】全站滚动条统一为细胶囊样式（对齐原生 overlay 滚动条观感）：透明轨道、透明描边收细视觉宽度（10px 命中区 / ~4px 可见）、悬停加粗加深、按压更深，深浅模式随前景色自适应；Firefox 走标准属性兜底（细滚动条 + 中间明度）；既有隐藏滚动条的区域（工具类、inert 列）不受影响
+- 【Audit 对账进度】对账进度条改为完成行驱动的成本加权模型：只统计批次「完成」行（并行提交的开始行不再虚增进度），判定批次跨成员切片累计不再逐片回落（旧模型 95%→23% 锯齿消除），headline 阶段批行按裸批行补账（rich console 吞标签），新增控制流阶段跟踪；分母按实测批均时（精筛 1.5s / 标题 2s / 判定 8s）外推、随批号揭示自我修正，全程单调；运行态展示组合进度行（如「判定 23/72 批 · transcript 3/8」）+ 百分比 + 计时
+- 【Audit 报告面板】报告头补 token 成本与时长成文（分钟口径，顺带修复 token 用量因键名不匹配从未显示的问题）；指令分组失败置顶、组行计数改为五态迷你比例条；新增「声明覆盖」原文快照折叠面板（对账时刻的声明原文整篇呈现，覆盖状态直接涂在文本上——绿=已触达 / 黄=未验证 / 灰=未建模，悬停色块看该段指令摘要；文本覆盖按字数口径——涂绿文字字数 / 原文文字总数，指令覆盖按条数、建模完整度按字数三者分报，未落回原文的指令诚实计数）；对账警告升级为告示条（悬停看全量）
+- 【Audit 四域重构】run 工作台 Audit tab 重做为 run 级四域审计板：左侧域导航（Skill / Agent / Workflow / Run 竖排 + 域内目标列表），右侧对账报告（未选目标时为域导览空态——域语义说明 + 统计瓦片）；Skill / Agent 域以目标注册表合并跨成员发现（行内成员归因 pills + 事件数 + 上次对账结果徽标），选中目标经右栏「开始对账」显式发起（选中 ≠ 发起，未审目标先看目标摘要启动卡；已有结果/运行中/失败态选中即直接展示报告）——对涉事成员全体 transcript 对账——源 bundle 在盘时走 sift `--run` 原生对账（成员枚举/目标匹配/原生调用溯源交给 sift，报告带命中会话/调用数，成员归因按 run 溯源单元权威映射），否则回落多 `--transcript` 单次跨成员聚合（sift 原生跨成员聚合，finding 经受控 transcript 文件名映射回成员徽标；`--kind` 切片名按 stem 前缀回映射，成员归因不再漏）；Workflow 域按成员对账主 agent 编排组合声明（规程层 + 计划层，恒单成员，finding 归层徽章保留）；Run 域改为 run 级 sift 对账——编排规程声明 × 全体成员整会话宽松对账（不切段，审全员编排纪律；声明源成员带真名时走 sift `--run` 原生宽松模式，否则回落 DB 全员 transcript），此前的确定性检查与失败归因聚合整体移除（Graph 节点详情的失败归因不受影响）；报告由 sift JSON 自渲染（五态计数瓦片 + 比例条 + verdict 过滤 + 指令分组列表 + 成员分布行——失败/判定计数，点选收窄到单成员），finding 深链成员轮次（turn-digest 解析），对账任务走 run 级键缓存（cross-tab resume + sessionStorage 恢复），运行态带耗时与慢批次提示；面板整体沉入浅灰画布，左栏从画布直接截出（发丝分区隔开左右，不再叠卡片），右侧报告卡以分层投影浮起（对齐工作台其它 tab 的卡片语法，边界靠高低差而非描边）；solo run 与 bundle run 同一组件单成员退化
+- 【AI workflow 分析退役】移除 LLM 会话行为分析（v1-v4，WorkflowAnalyseTab 及流程框图/节点审计/trajectory-analyzer/audit-session 与 audit-session-py 端点家族）——sift 对账为唯一审计执行面；离线导出查看器的 Audit 板块收敛为 sift 对账单板块
+- 【workflow bundle 导入】支持新的 workflow bundle 输入格式，结构校验改用随包 `workflow.schema.json`（哈希验真 + schema 随包上传进数据仓）：数据仓与本地新格式包可正常导入，重试、回滚与子图正确展示；旧版本导入的 run 缺随包 schema 时上传会明确提示重新导入，既有 run 的旧格式图数据仍可查看
+- 【run 工作台】Files tab 排版对齐工作台卡片语法并补性能与新过滤：头卡承载文件名搜索胶囊 + 过滤分段 + 类型筛选 chips + 四指标瓦片（标签上/值下，含重叠红字）与重编汇册回执，文件列表按扩展名类型分组、发丝分隔行——文件名优先，路径/读取量为次级信息、读取量以中性比例条示意；文件行与复卷长文本 memo 化（展开/复卷某个文件不再全表重渲，配合屏外行跳过渲染根治长列表卡顿），行展开读取明细、单文件循迹复卷、整目录重编汇册交互不变
+- 【run 工作台】Trace tab 退役并入 Turns（12→11 tab）：跨成员关键词搜索以毛玻璃浮层覆盖 Turns 左列——节点列表在玻璃后常驻虚化，命中索引与播放器并排、点开命中不消失，✕ / Esc / 点 Run 轨撤下浮层回节点列表；命中集内可按来源（用户/模型/工具输出/派发/子代理/返回）、thinking、工具名带计数过滤（旧 Trace 筛选能力恢复）；搜索胶囊一框两语法（文本跨成员搜索、`#N` 直达当前会话轮次，⌘K 聚焦）；离线查看器的 Turns 面板获同款搜索与过滤（对内嵌数据客户端匹配）；旧深链 `?tab=trace` 自动落到 Turns
+
+### Fixed
+- 【数据仓 LFS】git-lfs 缺失不再要求手工安装：任一数据仓动作即在后台预热自举（下载源回退链 GitHub 直连 → 公共镜像，sha256 pin 校验；并发触发单飞去重）；私有仓 partial clone 的内部懒取回源此前匿名访问导致「令牌无效」误导报错，凭据现固化进镜像仓级 helper 覆盖镜像内一切 git 进程；GitCode 普通代码仓的 LFS 未启用拒绝（报错含 forbidden 字样）不再被误分诊为「令牌无推送权限」，白话文案直说凭据无问题并列出出路；设置页保存不再把用户关闭的 LFS 模式悄悄复位（设置页新增 LFS 开关，PUT 缺省保留现有值）；LFS 关闭时导入指针形态的 `.7z`/`.gz` 给白话指引（不再抛 `Is not archive` 费解错误）
+- 【上下文水位】glm-5 / glm-5.1 上下文窗口 200K → 1M（全系 1M）；未登记模型兜底 200K → 1M（新一代模型普遍 1M，旧兜底把水位普遍高估成濒满，饼图/水位条失真）
+- 【删除缓存】删除会话后数据仓视图缓存立即失效（此前 TTL 窗口内仍显示「已导入」，直达链接 404 且无法重导）
+- 【会话身份契约】insight 导出的会话库再导入不再被误标为 CANNBot-Insight 记录类：格式轴（怎么解析）与身份轴（谁生产）解耦，导出件自报产源（ExportMeta 格式头），同实例重导入命中既有行不再产生重复；数据仓「导入查看」深链修复——链接改走 solo run 工作台并携带 DB 行真实记录类消歧（导入响应权威回传），未导入行不再预拼错误框架的 404 链接
+- 【子代理可见性】无桥子代理（上游 meta 登记为空 / 异步派发回执无子会话 id）此前在轮次列表整组不可见——现按启动时刻就近挂到主链最近轮下，slate「未关联」徽标区分桥驱动精确 lane，可展开查看全部轮次；自引用桥（派发端落在子代理自身 turn 的畸形桥）建 lane 前剔除并展开链防环截断；cpx 侧子代理捕获流按 x-claude-code-agent-id 成员身份归档——同一成员重启续跑不再裂成无归属新文件，异步派发的 meta 挂起待父派发到达后回填
+- 【会话导入】claude code 运行中 Ctrl+X Ctrl+C 插队提问整条消失——插队消息按队列协议升格为用户轮（原文取自 attachment.prompt），未知行/attachment 子类型分级告警不再静默跳过；emoji 被代理对截半导致整会话导入失败——全部截断点改走 UTF-16 安全截断（代理对不再切半）；`/技能名` 斜杠展开的技能调用计入 skills 统计（此前仅工具调用通道计数）
+- 【工具时序】claude code / opencode 捕获的工具调用落真实起止时间戳（proxy duration_ms 与行边界推导），无声明源降级为既有行为；泳道时间轴首末刻度不再被容器切半，两端补会话真实起止时刻（去重防叠字），小时级刻度跨日带日期
+- 【数据仓 LFS 导入】LFS 模式下从数据仓导入 bundle / 会话在物化前统一走读路径就绪检查：git-lfs 缺失时先自动下载私有件（与上传同享「零手工安装」，仍失败给三条出路指引），不再把 git 原文（`git-lfs: not found`）直接抛给用户；镜像工作树 `.gitattributes` 过期（此前默认模式上传写回的剔除版）会在物化前从远端刷新——此前过期副本让 smudge 静默失效，指针文本被当作 7z/gz 内容落盘，导入在解压环节报费解错误
+
+## [v0.2.39] - 2026-10-20
+
+### Changed
+- 【run-first 统一观测面】run 成为唯一观测单元：会话以 solo run 形态打开 run 工作台（会话徽标），独立 session 详情页与 session API 家族退役；CLI `session` 子命令与全部输出保持原样
+- 【Session 对比】对比页输入限定为会话 taskId（solo run 维度），跨会话对比能力不变
 - 【会话页返回语义】会话页内切 tab / 跨 tab 跳转不再逐条进入浏览器历史——Back（页内按钮与浏览器返回键）直接回到上一个大页面（如主页）；地址栏仍实时反映当前视图，深链 / 刷新 / 分享不受影响
 
 ### Added
+- 【run 工作台新 Tab】Wire 轮次 / Replay / Score（六维轨迹评分卡）三个会话维度入驻 run 工作台（Wire / Replay 为高级 Tab，默认隐藏，URL `?a` 展开）；Skill 全文深钻与 Audit 对账同款支持成员域定向
+- 【离线 HTML 导出迁移】「导出 HTML」按钮移至 run 工作台页头（solo run），产出的离线可交互 bundle 与此前完全一致
 - 【JSONL 导入自动识别（源族）】导入入口合并为单一「JSONL (auto)」：claude / cpx 捕获、codex rollout 与 DSH 原生日志按文件内容自动识别，传错源自动纠正，目录扫描混合条目各带归属；后续新 jsonl 框架接入不再新增 UI 按键
 - 【dsh（DeepSeek Harness）会话归类】cpx 捕获的 dsh 会话按框架归类显示 DSH 徽标（与 claude / opencode / codex 并列，同 sid 多记录类共存）
 - 【DSH 原生会话导入】`~/.dsh/sessions/**/session.v4.jsonl(.zstd)` 与 dsh-export 导出根可直接导入：多帧 zstd 解压 → 事件转义为会话轮次 → 子代理按 `header.parentSession` 并入主会话时间线（DSH 徽标）
 
 ### Fixed
-- 【含 emoji 会话导入失败】修复文本截断把表情字符切成两半导致整会话导入报错的问题，长会话重导即可恢复
-- 【claude 插队消息不再丢失】Claude Code 运行中插入的用户消息（Ctrl+X Ctrl+C，≥2.1.3xx 的队列机制）此前在时间线上整条消失——现作为独立用户轮显示在真实发生位置（提问与续答之间），存量会话刷新后自动恢复
-- 【DB 导出再导入的会话类型保持】导出的会话数据库（.db）再导入时保持原会话类型与版本（此前误标为 CANNBot-Insight 且版本丢失），同实例重导入按原记录类幂等合并、不再产生重复行；导入预览新增 Type 列显示每个会话的真实类型
-- 【数据仓镜像凭据自持（私有仓上传修复）】partial clone 镜像内的惰性物化（checkout/reset 回源 blob）此前匿名回源——干净机器（无全局 git credential helper）上私有远端 401，报错经分诊显示为「令牌无效或已过期」误导排查。现镜像仓自持凭据：lake-auth.json 单源凭据固化进镜像仓级 credential helper（清位隔离机器环境，轮换随下次同步生效），镜像内一切 git 进程（显式命令 / 惰性回源 / LFS 钩子）均确定性认证；凭据清除后自动卸载，编辑态表单凭据不落盘
 - 【opencode 会话 Files 分析与技能名】opencode 旧版 read 的 `path` 参数键读取纳入 Files 分析（此前整页不可见）；skill 工具新版 `id` 参数键识别出真技能名（此前显示为字面量 "skill"），存量会话重导入后自动订正且不产生重复记录
 - 【opencode 2.x 会话内容恢复】v2 会话的工具结果（内容块数组，含湖导出的嵌套壳形态）归一为文本——read 行级解析、文件还原、skill 内容恢复全链可用；存量会话重导入自动解包订正
 - 【shell 命令安全面与隐式读】bash / shell（opencode 2.x）/ exec_command（codex）统一纳入 Files 隐式文件读采集与 D2 安全评分（破坏性命令 / 密钥外发检测此前在这两类会话整块盲区）
@@ -174,7 +238,7 @@
 ### Fixed（自查审查：code-review skill 全维度检视）
 - 【旧 history 条目（framework 缺失）删除双行全删无提示（数据丢失）】旧版前端写入的条目无 framework → 无消歧参数的删除命中同 sid 全部行级联清除。现在删除前按行数探测（挂载时已拉取的 /api/observe/data 顺便计数），旧条目且该 taskId 多行时弹 Dialog 明示「将删除全部 N 份记录」，用户确认后才执行（ui/dialog，非 browser confirm）。IT ④：弹窗内容/取消保留/确认后执行
 - 【导入列表类型徽标归一】success 徽标白名单经 `agentFrameworkOf` 剥 `-proxy` 后缀（捕获条目 claude-code-proxy 不再缺徽标，与 ImportHistory 同款）
-- 【多行删除确认改服务端事实源（PR #20 审查复核）】前端 `rowCounts` 探测源 `/api/observe/data?limit=500` 实际只认 `pageSize`（缺省 20）——DB 会话一多，旧条目 taskId 落窗口外 → 确认弹窗永不触发、无消歧删除照旧级联全删。改为 **delete-session 服务端守卫**：无 framework 且命中多行返回 409 + rowCount（`findMany` 事实源判定，不受列表截断影响），前端据此弹确认、用户确认后带 `confirmAll: true` 重发放行。IT：delete-session-api 双行 409/消歧删单行/confirmAll 全删三态 + 组件级 409 驱动弹窗全流程（首删 409 → 取消保留 → 再删 409 → 确认全删）
+- 【多行删除确认改服务端事实源（审查复核）】前端 `rowCounts` 探测源 `/api/observe/data?limit=500` 实际只认 `pageSize`（缺省 20）——DB 会话一多，旧条目 taskId 落窗口外 → 确认弹窗永不触发、无消歧删除照旧级联全删。改为 **delete-session 服务端守卫**：无 framework 且命中多行返回 409 + rowCount（`findMany` 事实源判定，不受列表截断影响），前端据此弹确认、用户确认后带 `confirmAll: true` 重发放行。IT：delete-session-api 双行 409/消歧删单行/confirmAll 全删三态 + 组件级 409 驱动弹窗全流程（首删 409 → 取消保留 → 再删 409 → 确认全删）
 
 ### Security
 - 【安全加固批】修复服务端多类输入校验缺失问题（命令执行 / 路径越权 / 请求伪造类）：本地 git 调用全部改为无 shell 的数组参数模式；taskId、smart-agent 输出与 prompt 参数统一白名单收敛（导入/浏览路径与 breather 连接目标为本地自用功能，刻意不设白名单）。新增环境变量：`CANNBOT_AGENT_OUTPUT_ROOTS`（追加 smart-agent 输出根）。**建议所有部署尽快升级；旧版本请勿将服务端口暴露给不可信网络**
@@ -215,7 +279,7 @@
   - **loading 骨架**：点击后 fetch 期间中间面板显示脉冲骨架，消灭空白期体感
 
 ### Fixed
-- 【测试误报：npm-publish「lockfile 单轨不漂移」用例删除（issue #5）】insight 的 package-lock.json 被 .gitignore 忽略（各机器本地生成、不入库），该用例读本地 lockfile 断言与 package.json 同值——版本升级后重装前所有拉取新提交的机器必红一次（环境过期被误报为代码错误）；且 pack/publish 均不读 lockfile，对发布物零影响。删除该用例及模块顶层 lockfile 读取（附带消除全新 clone 未 install 时 readFileSync throw 致整测试文件崩的边界）；真正入库的单轨（version.ts ↔ package.json）与 CLI bundle --version 校验保留。注：cpx 的 lockfile 入库，其同款用例语境成立，不受影响
+- 【测试误报：npm-publish「lockfile 单轨不漂移」用例删除 】insight 的 package-lock.json 被 .gitignore 忽略（各机器本地生成、不入库），该用例读本地 lockfile 断言与 package.json 同值——版本升级后重装前所有拉取新提交的机器必红一次（环境过期被误报为代码错误）；且 pack/publish 均不读 lockfile，对发布物零影响。删除该用例及模块顶层 lockfile 读取（附带消除全新 clone 未 install 时 readFileSync throw 致整测试文件崩的边界）；真正入库的单轨（version.ts ↔ package.json）与 CLI bundle --version 校验保留。注：cpx 的 lockfile 入库，其同款用例语境成立，不受影响
 
 ## [v0.2.27] - 2026-09-10
 
@@ -277,7 +341,7 @@
   - `agent-content` 路由：两级恢复——**system 注入（主路径）> 磁盘扫描（兜底：会话内无声明数据的形态）**；`source=system|disk` 显式指定。移除 Read 恢复依赖（`agent-md-recover.ts` 保留未删，调用点已撤）
   - `audit-agentsift` 路由：声明同链路（审的 = 看的）；system 源物化临时 .md 注入 frontmatter `name: <agentName>`
   - `agent-role-name-map.ts`（client-safe）+ `buildStructuredRecords`：子代理 turn 的 `rec.agent` 改用**角色名**（bridge.subagentType 优先，general 时 join dispatchTurnId→SkillEvent）——修 agent 对账切片匹配断点：`Turn.agentName` 是任务标题（"Task29 修复Kernel崩溃"），sift `--kind agent` 按声明 name 匹配 records.agent 永远对不上
-- 测试：fixture = 真实会话 19 agentType 子代理样本 + 恢复 6 用例（全恢复 / 实际长度断言 / 扩展字段优先 / 通用 prompt 排除 / 标题守卫 / 缺目录容错）+ 角色名映射 5 用例 + agent-content IT 5 用例 + audit IT +1 + 构建记录 +2；客户端可达性静态锁覆盖角色名映射
+- 测试：fixture = 真实会话 19 agentType 子代理样本 + 恢复 6 用例（全恢复 / 真身长度断言 / 扩展字段优先 / 通用 prompt 排除 / 标题守卫 / 缺目录容错）+ 角色名映射 5 用例 + agent-content IT 5 用例 + audit IT +1 + 构建记录 +2；客户端可达性静态锁覆盖角色名映射
 
 ## [v2.03] - 2026-08-29
 
@@ -328,7 +392,7 @@
 ## [v1.80] - 2026-08-18
 
 ### Added
-- 【proxy】密钥不落盘（`redactor` 模块）— 捕获文件永不落任何 API key：结构层按键名全等打码（`api_key`/`authorization`/`x-api-key`/…），字符串层按厂家键形打码（`sk-ant-`/`sk-proj-`/`gsk_`/`AIza`/`xai-`/`GL-`/`LTAI`/泛 `sk-`、`Bearer` 凭据、`XX_API_KEY=` 回显、URL query 键）；接入 `dispatchEmit` 唯一落盘入口，cpx 启动行同源打码；掩码 `前4…后4`，`max_tokens`/`input_tokens`/裸 `key` 零误伤。真机 `cpx claude`（bigmodel）/`cpx opencode`（dashscope）双链路验证 0 泄漏。设计见 `proxy/DESIGN.md` §7
+- 【proxy】密钥不落盘（`redactor` 模块）— 捕获文件永不落任何 API key：结构层按键名全等打码（`api_key`/`authorization`/`x-api-key`/…），字符串层按厂家键形打码（`sk-ant-`/`sk-proj-`/`gsk_`/`AIza`/`xai-`/`GL-`/`LTAI`/泛 `sk-`、`Bearer` 凭据、`XX_API_KEY=` 回显、URL query 键）；接入 `dispatchEmit` 唯一落盘咽喉，cpx 启动行同源打码；掩码 `前4…后4`，`max_tokens`/`input_tokens`/裸 `key` 零误伤。真机 `cpx claude`（bigmodel）/`cpx opencode`（dashscope）双链路验证 0 泄漏。设计见 `proxy/DESIGN.md` §7
 
 ## [v1.79] - 2026-08-18
 

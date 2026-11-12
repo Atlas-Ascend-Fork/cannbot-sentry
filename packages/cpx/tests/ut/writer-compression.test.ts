@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
-// This program is free software; you can redistribute it and/or modify it under the terms and conditions of
+// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
 // CANN Open Software License Agreement Version 2.0 (the "License").
 // Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
@@ -24,6 +24,17 @@ import {
 import { ensure7z, decompressToPlain } from '../../src/compression.ts';
 
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cpx-7z-'));
+
+// insight 包源级锁的定位：源码目录名 insight / 产品部署目录名
+// context-insight 依次探测；两者皆缺返回 null（skipIf 门控见用例处）
+const INSIGHT_COMPRESSION_SRC = (() => {
+  const searchRoot = path.resolve(__dirname, '../../..');
+  for (const name of ['insight', 'context-insight']) {
+    const p = path.join(searchRoot, name, 'src', 'lib', 'compression.ts');
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
+})();
 process.env.CONTEXT_PROXY_DIR = tmpRoot;
 
 beforeEach(() => {
@@ -169,10 +180,12 @@ describe('writer 7z at rest', () => {
     expect(fs.statSync(f).size).toBe(270 * 1024 * 1024);
   });
 
-  it('compression parity：双端 .7z 解压点 maxBuffer 对齐 1GiB（源级锁）', () => {
+  it.skipIf(INSIGHT_COMPRESSION_SRC == null)('compression parity：双端 .7z 解压点 maxBuffer 对齐 1GiB（源级锁）', () => {
     // 本轮审查抓的正是「readCaptureBuffer 修了 1GiB、同文件 decompressToPlain
-    // 漏改」——源级锁双端两个解压点的 maxBuffer 形态（读源码正则抽取），漂移/复发即红
-    const insightSrc = fs.readFileSync(path.resolve(__dirname, '../../../insight/src/lib/compression.ts'), 'utf8');
+    // 漏改」——源级锁双端两个解压点的 maxBuffer 形态（读源码正则抽取），漂移/复发即红。
+    // insight 包两种目录名都探测（源码布局 insight / 部署名
+    // context-insight）；缺席（单独部署 cpx 的环境）skip 不红流水线。
+    const insightSrc = fs.readFileSync(INSIGHT_COMPRESSION_SRC!, 'utf8');
     const dtStart = insightSrc.indexOf('export function decompressToPlain');
     const dtEnd = insightSrc.indexOf('export function readCaptureBuffer');
     expect(insightSrc.slice(dtStart, dtEnd)).toContain("run7za(['e', '-so', archivePath], 1 << 30)");

@@ -1,9 +1,9 @@
 // Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
-// This program is free software; you can redistribute it and/or modify it under the terms and conditions of
+// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
 // CANN Open Software License Agreement Version 2.0 (the "License").
-// Please refer to the License for details. You should not use this file except in compliance with the License.
+// Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
-// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
 // 同子代理会话复用（首发 + 返工重入）的派发窗配对 IT。现场 ses_ecb797cb：
@@ -149,7 +149,7 @@ describe('bridge-builder: 复用会话的派发窗配对', () => {
 
 // meta 直连形态（claude proxy Agent）下 meta 映射值 ≠ resultSessionId：
 // 派发时刻表必须按与 matchedSessionId 同序的三段解析预键，否则查空时刻表
-// → 复用窗口退化无界、两窗重新互相包含（PR #126 审查意见）
+// → 复用窗口退化无界、两窗重新互相包含（审查意见）
 describe('bridge-builder: meta 直连 ≠ result 会话 id 的窗口配对', () => {
   it('meta 映射优先时，时刻表按 meta 值键控，首发/返工窗口仍正确拆分', () => {
     resetIdCounter();

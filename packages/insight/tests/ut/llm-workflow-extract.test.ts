@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
-// This program is free software: you can redistribute it and/or modify it under the terms of
+// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
 // CANN Open Software License Agreement Version 2.0 (the "License").
 // Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
@@ -19,7 +19,7 @@ import {
 } from "@/lib/llm-workflow-extract";
 import { assembleCombinedDeclaration, recoverCombinedWorkflowDeclaration } from "@/lib/sift-audit";
 
-const TURN0_BODY = "# 基于 ACLIB 的算子开发工作流\n\n你是纯编排者（Orchestrator），读取任务清单按顺序派发 SubAgent，不自己写代码。" + "r".repeat(500);
+const TURN0_BODY = "# 基于 ACLNN 的算子开发工作流\n\n你是纯编排者（Orchestrator），读取任务清单按顺序派发 SubAgent，不自己写代码。" + "r".repeat(500);
 const STATE_BODY = "# STATE\n\n## Tasks\n\n- [x] 1. 派发 developer\n- [ ] 2. 验收 st-verifier\n- [ ] 3. 收尾归档\n" + "p".repeat(120);
 const STATE_WITH_LINES = STATE_BODY.split("\n").map((l, i) => `${i + 1}: ${l}`).join("\n");
 

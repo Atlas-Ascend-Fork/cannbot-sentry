@@ -3,10 +3,11 @@
 // CANN Open Software License Agreement Version 2.0 (the "License").
 // Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
-// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
 import { useState, useEffect } from "react"
+import { sessionViewUrlFor, type ViewUrlFor } from "@/lib/observe/member-url"
 import type { CoverageItem, CoverageStats } from "@/lib/skill-coverage"
 import type { SkillsListFormat } from "@/lib/ingest/adapters/system-structure"
 
@@ -23,7 +24,8 @@ export interface SkillCoverageResponse {
 
 const cache = new Map<string, SkillCoverageResponse>()
 
-export function useSkillCoverage(taskId: string, framework?: string) {
+export function useSkillCoverage(taskId: string, framework?: string, urlFor?: ViewUrlFor) {
+  const buildUrl = urlFor ?? sessionViewUrlFor
   const cached = cache.get(taskId)
   const [data, setData] = useState<SkillCoverageResponse | null>(cached ?? null)
   const [loading, setLoading] = useState(!cached)
@@ -33,7 +35,7 @@ export function useSkillCoverage(taskId: string, framework?: string) {
     let cancelled = false
     const q = new URLSearchParams({ taskId })
     if (framework) q.set("framework", framework)
-    fetch(`/api/observe/session/skill-coverage?${q.toString()}`)
+    fetch(buildUrl(`skill-coverage?${q.toString()}`))
       .then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.json()
@@ -51,7 +53,7 @@ export function useSkillCoverage(taskId: string, framework?: string) {
         setLoading(false)
       })
     return () => { cancelled = true }
-  }, [taskId, framework])
+  }, [taskId, framework, buildUrl])
 
   return { data, loading, error }
 }

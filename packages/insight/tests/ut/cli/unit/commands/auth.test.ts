@@ -1,9 +1,9 @@
 // Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
-// This program is free software, you can redistribute it and/or modify it under the terms and
-// conditions of the CANN Open Software License Agreement Version 2.0 (the "License").
+// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+// CANN Open Software License Agreement Version 2.0 (the "License").
 // Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
-// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT OF MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
 // `ctxi auth` 命令 IT：交互流程（注入 prompts/probe）、非交互三件套、
@@ -22,7 +22,7 @@ let home: string;
 const savedEnv: Record<string, string | undefined> = {};
 
 beforeAll(() => {
-  home = fs.mkdtempSync(path.join(os.tmpdir(), 'cbi-auth-it-'));
+  home = fs.mkdtempSync(path.join(os.tmpdir(), 'ctxi-auth-it-'));
   for (const k of ['CONTEXT_PROXY_DIR', 'LAKE_PUSH_URL', 'LAKE_USERNAME', 'LAKE_TOKEN', 'LAKE_REMOTE_URL']) {
     savedEnv[k] = process.env[k];
     delete process.env[k];

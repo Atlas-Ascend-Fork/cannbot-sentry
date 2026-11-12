@@ -1,9 +1,9 @@
 // Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
 // This program is free software, you can redistribute it and/or modify it under the terms and conditions of
-// CANN Open Software License Agreement Version 2.0 (the "License).
+// CANN Open Software License Agreement Version 2.0 (the "License").
 // Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
-// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT OF MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
 // contextWindowLimit 窗口基数一致性 IT：turn 无 model（user turn 常态，user 消息
@@ -17,8 +17,8 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { NextRequest } from 'next/server';
 import { prisma } from '../setup';
-import { GET as turnsListGet } from '@/app/api/observe/session/turns/route';
-import { GET as turnDetailGet, __clearTurnDetailCaches } from '@/app/api/observe/session/turns/[turnId]/route';
+import { GET as turnsListGet } from '@/lib/observe/session-handlers/turns';
+import { GET as turnDetailGet, __clearTurnDetailCaches } from '@/lib/observe/session-handlers/turn-detail';
 
 const TASK_GLM = 'ctx-limit-it-glm53';
 const TASK_NOMODEL = 'ctx-limit-it-nomodel';

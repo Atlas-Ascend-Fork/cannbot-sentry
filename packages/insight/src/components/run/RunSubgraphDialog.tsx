@@ -2,13 +2,14 @@
 // Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
 // This program is free software, you can redistribute it and/or modify it under the terms and conditions of
 // CANN Open Software License Agreement Version 2.0 (the "License").
-// Please refer to the License for details. You should not use this file except in compliance with the License.
+// Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
-// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
 import { useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { ScrollFade } from "@/components/ui/scroll-fade";
 import { RunNodeDetail } from "./RunNodeDetail";
 import { bandLabel } from "./run-theme";
 import { RunCanvas } from "./RunCanvas";
@@ -28,6 +29,7 @@ export function RunSubgraphDialog({
   rollbacks,
   entryKey,
   lens,
+  onLocateSession,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -36,6 +38,8 @@ export function RunSubgraphDialog({
   rollbacks: RollbackRecord[];
   entryKey: string | null;
   lens?: LensKey;
+  /** 成员会话定位（主图侧栏同款，工作台外壳收口；弹窗打开时由外壳先关闭弹窗） */
+  onLocateSession: (taskId: string) => void;
 }) {
   const entry = entryKey !== null ? nodesByKey.get(entryKey) ?? null : null;
   // 锁定入口代：只取该代生成器节点的子图视图
@@ -75,7 +79,7 @@ export function RunSubgraphDialog({
             />
           </div>
           {/* 历史侧栏：浮层玻璃面板，画布内容滑入下方被虚化，滚动经 mask 渐隐 */}
-          <aside className="run-glass run-scroll-fade absolute inset-y-2 right-2 z-10 w-[340px] shrink-0 overflow-y-auto rounded-xl">
+          <ScrollFade as="aside" className="run-glass absolute inset-y-2 right-2 z-10 w-[340px] shrink-0 overflow-y-auto rounded-xl">
             {selectedNode ? (
               <RunNodeDetail
                 node={selectedNode}
@@ -85,6 +89,7 @@ export function RunSubgraphDialog({
                   // 跨代跳转目标不在本代子图内 → 忽略（弹窗锁定入口代）
                   if (viewKeys.has(key)) selectInDialog(key);
                 }}
+                onLocateSession={onLocateSession}
                 onClose={() => selectInDialog(null)}
               />
             ) : (
@@ -92,7 +97,7 @@ export function RunSubgraphDialog({
                 点击子图节点查看运行历史（逐次尝试、验收结论、成员会话与 turn 下钻）。
               </p>
             )}
-          </aside>
+          </ScrollFade>
         </div>
       </DialogContent>
     </Dialog>

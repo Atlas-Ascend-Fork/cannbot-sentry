@@ -1,23 +1,26 @@
 // Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
-// This program is free software; you can redistribute it and/or modify it under the terms and conditions of
+// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
 // CANN Open Software License Agreement Version 2.0 (the "License").
 // Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
+// See LICENSE in the root of the software repository for the full text of the License.
 
 import { useState, useEffect, useCallback } from "react"
+import { sessionViewUrlFor, type ViewUrlFor } from "@/lib/observe/member-url"
 
 export interface SkillContentAuditItem {
   skillName: string
   hasContent: boolean
-  source: "skill-tool" | "read" | null
+  source: "skill-tool" | "read" | "shell" | null
   length: number
   lines: number
   fullRead: boolean
   maxLine: number | null
 }
 
-export function useSkillContentAudit(taskId: string, framework?: string) {
+export function useSkillContentAudit(taskId: string, framework?: string, urlFor?: ViewUrlFor) {
+  const buildUrl = urlFor ?? sessionViewUrlFor
   const [items, setItems] = useState<SkillContentAuditItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -26,7 +29,7 @@ export function useSkillContentAudit(taskId: string, framework?: string) {
     let cancelled = false
     const q = new URLSearchParams({ taskId })
     if (framework) q.set("framework", framework)
-    fetch(`/api/observe/session/skill-content-audit?${q.toString()}`)
+    fetch(buildUrl(`skill-content-audit?${q.toString()}`))
       .then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.json()
@@ -46,13 +49,13 @@ export function useSkillContentAudit(taskId: string, framework?: string) {
         }
       })
     return () => { cancelled = true }
-  }, [taskId, framework])
+  }, [taskId, framework, buildUrl])
 
   const refetch = useCallback(() => {
     setLoading(true)
     const q = new URLSearchParams({ taskId })
     if (framework) q.set("framework", framework)
-    fetch(`/api/observe/session/skill-content-audit?${q.toString()}`)
+    fetch(buildUrl(`skill-content-audit?${q.toString()}`))
       .then(r => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`)
         return r.json()
@@ -67,7 +70,7 @@ export function useSkillContentAudit(taskId: string, framework?: string) {
         setItems([])
         setLoading(false)
       })
-  }, [taskId, framework])
+  }, [taskId, framework, buildUrl])
 
   return { items, loading, error, refetch }
 }

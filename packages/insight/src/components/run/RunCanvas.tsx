@@ -1,9 +1,9 @@
 "use client";
 // Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
-// This program is free software: you can redistribute it and/or modify it under the terms and conditions of
+// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
 // CANN Open Software License Agreement Version 2.0 (the "License").
-// You may refer to the License for details on how to use this file except in compliance with the License.
-// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+// Please refer to the License for details. You may not use this file except in compliance with the License.
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
@@ -247,7 +247,9 @@ export function RunCanvas({
         </div>
       </div>
 
-      <div className="run-glass absolute bottom-3 right-3 flex items-center rounded-xl">
+      {/* 缩放/适配工具条：左下角——右缘被侧栏玻璃面板占据（w-360 悬浮），
+          右下角会被盖住 */}
+      <div className="run-glass absolute bottom-3 left-3 flex items-center rounded-xl">
         <button
           type="button"
           title="缩小（Ctrl + 滚轮）"

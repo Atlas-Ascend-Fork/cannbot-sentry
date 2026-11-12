@@ -26,7 +26,7 @@ const __dirname = path.dirname(__filename)
 const PKG_DIR = path.resolve(__dirname, '..')
 const require = createRequire(PKG_DIR + '/')
 
-// 数据目录迁移：cannbot 时代（≤0.2.40）的 ~/.cannbot-insight 首启原子改名到
+// 数据目录迁移：cannbot 时代（≤0.2.39）的 ~/.cannbot-insight 首启原子改名到
 // ~/.context-insight。仅当「旧在、新不在」时执行；显式 CONTEXT_INSIGHT_HOME
 // 覆盖 = 用户自管目录，不掺和；两目录并存 = 沿用新目录并提示（不合并）。
 const LEGACY_DATA_DIR = path.join(homedir(), '.cannbot-insight')
@@ -203,12 +203,13 @@ if (args[0] === '--stop') {
 async function startWebUi(rawArgs) {
   const { advanced, killExisting, fresh } = parseFlags(rawArgs)
 
-  // Node 版本检查（>= 22.12，与 engines/ensure-native/start.sh 同门槛；
-  // better-sqlite3@13 / commander@14 等依赖要求 Node ≥22，低版本原生模块
-  // 加载/构造直接段错误）
+  // Node 版本检查（>= 22.14，与 engines/start.sh 同门槛；
+  // better-sqlite3@13 预编译二进制在 22.13 及以下加载/构造直接段错误——
+  // 全新隔离环境实测二分：22.12.0 / 22.13.0 SIGSEGV、22.14.0 起探针通过；
+  // commander@15 要求 >=22.12，被 better-sqlite3 的 22.14 覆盖）
   const [nodeMajor, nodeMinor] = process.versions.node.split('.').map(n => Number.parseInt(n, 10))
-  if (nodeMajor < 22 || (nodeMajor === 22 && (nodeMinor || 0) < 12)) {
-    console.error(`[ctxi] Node.js ${process.versions.node} 不支持，需 >= 22.12.0（better-sqlite3@13 等依赖要求 Node ≥22，低版本会段错误）。`)
+  if (nodeMajor < 22 || (nodeMajor === 22 && (nodeMinor || 0) < 14)) {
+    console.error(`[ctxi] Node.js ${process.versions.node} 不支持，需 >= 22.14.0（better-sqlite3@13 原生二进制在 22.13 及以下段错误）。`)
     console.error('[ctxi] 用 nvm: nvm install 22 && nvm use 22；或 https://nodejs.org 直接装。')
     process.exit(1)
   }
@@ -221,7 +222,7 @@ async function startWebUi(rawArgs) {
   const dbPath = path.join(DATA_DIR, 'insight.db')
   const distDir = path.join(PKG_DIR, '.next')
   // 历史清理：旧版启动器曾把绝对 distDir 传给 Next，被拼成包目录深处的垃圾路径
-  // （如 <PKG>/home/<user>/.cannbot-insight/.next），一次性回收
+  // （如 <PKG>/home/<user>/.context-insight/.next），一次性回收
   const legacyJunk = path.join(PKG_DIR, DATA_DIR, '.next')
   if (legacyJunk !== distDir) rmSync(legacyJunk, { recursive: true, force: true })
   process.env.DATABASE_URL = `file:${dbPath}`

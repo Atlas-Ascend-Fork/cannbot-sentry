@@ -468,7 +468,7 @@ describe('turn-split', () => {
       expect(assistantTurn!.contextWindowPct!).toBeCloseTo(expectedPct, 2);
     });
 
-    it('handles skill/<name> toolName from SKILL.md Read detection as type="use"', () => {
+    it('Read 读 SKILL.md（B 形）直出 use 事件——合成 skill/<name> 行已退役', () => {
       resetIdCounter();
       const interactions: RawInteraction[] = [{
         role: 'assistant',
@@ -486,13 +486,6 @@ describe('turn-split', () => {
             resultJson: '---\nname: cannbot-skill-review\n...',
             state: 'completed',
           },
-          {
-            toolCallId: 'skill-tc_read_skill',
-            toolName: 'skill/cannbot-skill-review',
-            argsJson: JSON.stringify({ skill: 'cannbot-skill-review', file_path: '/home/user/.claude/skills/cannbot-skill-review/SKILL.md' }),
-            resultJson: null,
-            state: 'completed',
-          },
         ],
         usage: { total: 100, input: 80, output: 20, reasoning: 0, cacheRead: 0, cacheWrite: 0, cost: 0, inputMessagesTokens: 80 },
         model: null,
@@ -502,7 +495,9 @@ describe('turn-split', () => {
         finish_reason: null,
       }];
       const result = splitIntoTurns(interactions, 'session-skill-read');
-      expect(result.toolCalls.length).toBe(2);
+      expect(result.toolCalls.length).toBe(1);
+      expect(result.toolCalls[0].toolName).toBe('Read');
+      expect(result.toolCalls[0].isSkillRelated).toBe(true);
       expect(result.skillEvents.length).toBe(1);
       expect(result.skillEvents[0].skillName).toBe('cannbot-skill-review');
       expect(result.skillEvents[0].eventType).toBe('use');
@@ -604,7 +599,7 @@ describe('opencode general dispatch（新版工作流：subagent_type=general/�
         role: 'assistant', content: null, timestamp: '2026-08-25T10:00:00.000Z', timeInfo: null,
         tool_calls: [{
           toolCallId: 'call_g1', toolName: 'task',
-          argsJson: JSON.stringify({ description: '创建开发目录', subagent_type: 'general', prompt: '你在此任务中扮演 ACLIB 算子开发工作流中的 "developer" agent。\n\n目标:创建目录。' }),
+          argsJson: JSON.stringify({ description: '创建开发目录', subagent_type: 'general', prompt: '你在此任务中扮演 ACLNN 算子开发工作流中的 "developer" agent。\n\n目标:创建目录。' }),
           resultJson: '<task id="ses_x" state="completed">\nDONE\n</task>', state: 'ok',
         }],
         usage: { total: 100, input: 10, output: 90, reasoning: 0, cacheRead: 0, cacheWrite: 0, cost: 0, inputMessagesTokens: 0 },

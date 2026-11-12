@@ -1,12 +1,12 @@
 // Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
-// This program is free software: you can redistribute it and/or modify it under the terms of
+// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
 // CANN Open Software License Agreement Version 2.0 (the "License").
-// Please refer to the License for details. You should not use this file except in compliance with the License.
+// Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
-// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE.
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
-// ls-remote 凭据通道 IT（PR #38 审查意见回归锁）：真实 401 挑战-应答链路——
+// ls-remote 凭据通道 IT（审查意见回归锁）：真实 401 挑战-应答链路——
 // git smart-http 网关（git http-backend + 强制 Basic 认证，独立子进程，同进程
 // 会因 execSync 冻结事件循环而死锁）做「私有远端」，lake-auth.json 存量
 // 凭据（表单为空——凭据不落 localStorage 后的常态）必须经一次性 credential

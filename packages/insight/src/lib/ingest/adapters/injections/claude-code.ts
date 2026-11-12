@@ -1,8 +1,7 @@
 // Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
 // This program is free software, you can redistribute it and/or modify it under the terms and conditions of
 // CANN Open Software License Agreement Version 2.0 (the "License").
-// Please refer to the License for details.
-// You should not use this file except in compliance with the License.
+// Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
@@ -23,6 +22,22 @@ export function parseTaskNotificationSummary(content: string): string {
   const statusLabel = status ? ` [${status}]` : '';
   const detail = summary ? `\n${truncateUtf16Safe(summary, 200)}` : '';
   return `✅ ${label}${statusLabel}${detail}`;
+}
+
+// Token-budget countdown the claude-code client injects into every request's
+// system component: <total_tokens>N tokens left</total_tokens>. Pure wire
+// bookkeeping, never a conversation event. cpx records the system array per
+// request verbatim (system components carry no message.id, so the capture
+// side cannot dedup them the way the messages history is deduped) — and in
+// the wild the countdown rides three carrier shapes: a pure string of its
+// own, a single text block, or a trailing line appended to the static system
+// prompt string (the varying number defeats exact-dedup of the whole
+// component). Strip it wherever it appears; the caller skips a component
+// that becomes empty. The native-transcript counterpart is the attachment
+// subtype total_tokens_reminder (KNOWN_ATTACHMENT_SUBTYPES, already skipped
+// at read): same fingerprint, carrier shapes aligned at the read side.
+export function stripTokenBudgetReminders(text: string): string {
+  return text.replace(/ ?<total_tokens>\d+ tokens left<\/total_tokens>/g, '').trim();
 }
 
 // ── Agent 注入分类（claude-code ≥2.1 新协议，非人类输入）──

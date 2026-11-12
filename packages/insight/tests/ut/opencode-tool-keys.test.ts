@@ -1,9 +1,9 @@
 // Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
-// This program is free software: you can redistribute it and/or modify it under the terms and conditions of
+// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
 // CANN Open Software License Agreement Version 2.0 (the "License").
-// Please refer to the License for details on how you could use this file except in compliance with the License.
+// Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
-// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
 // opencode 原生工具参数键全链 IT（历史缺陷回归锁）：
@@ -17,8 +17,8 @@ import { NextRequest } from 'next/server';
 import path from 'node:path';
 import { prisma } from '../setup';
 import { POST as importFilePOST } from '@/app/api/ingest/import-file/route';
-import { GET as fileReadsGET } from '@/app/api/observe/session/file-reads/route';
-import { GET as skillContentGET } from '@/app/api/observe/session/skill-content/route';
+import { GET as fileReadsGET } from '@/app/api/observe/run/[runId]/file-reads/route';
+import { GET as skillContentGET } from '@/lib/observe/session-handlers/skill-content';
 
 const sid = 'opencode-tool-keys-it';
 const fixture = path.join(__dirname, './data/claude-sessions/opencode-tool-keys.jsonl');
@@ -51,15 +51,20 @@ describe('opencode 工具参数键（read `path` / skill `id`）全链识别', (
       where: { turn: { session: { taskId: sid } } },
       select: { skillName: true, eventType: true },
     });
-    expect(events.length).toBe(1);
-    expect(events[0].skillName).toBe('ops-spec-gen'); // 旧缺陷：回落 "skill" 字面量
-    expect(events[0].eventType).toBe('invoke');
+    // read 读 SKILL.md（B 形 use，小写 read 工具名同样识别——旧检测只认大写
+    // Read）+ skill 工具调用（A 形 invoke，`id` 键真名）
+    expect(events.length).toBe(2);
+    expect(events.map(e => e.eventType).sort()).toEqual(['invoke', 'use']);
+    expect(events.every(e => e.skillName === 'ops-spec-gen')).toBe(true); // 旧缺陷：回落 "skill" 字面量
   });
 
   it('file-reads API：`path` 键 read 进入 Files 分析', async () => {
     await importFilePOST(importReq());
 
-    const res = await fileReadsGET(getReq(`/api/observe/session/file-reads?taskId=${sid}`));
+    const res = await fileReadsGET(
+      getReq(`/api/observe/run/solo:${sid}/file-reads`),
+      { params: Promise.resolve({ runId: `solo:${sid}` }) },
+    );
     expect(res.status).toBe(200);
     const data = await res.json();
     expect(data.summary.totalFiles).toBeGreaterThanOrEqual(1);
@@ -95,7 +100,7 @@ describe('opencode 工具参数键（read `path` / skill `id`）全链识别', (
       where: { turn: { session: { taskId: sid } } },
       select: { skillName: true },
     });
-    expect(events.length).toBe(1); // 不重复落行（旧缺陷：追加真名 + 残留旧行双份）
-    expect(events[0].skillName).toBe('ops-spec-gen'); // 真名自愈
+    expect(events.length).toBe(2); // use + invoke 各一行，不重复追加（旧缺陷：真名 + 残留旧行双份）
+    expect(events.every(e => e.skillName === 'ops-spec-gen')).toBe(true); // 真名自愈
   });
 });

@@ -1,13 +1,13 @@
 // Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
-// This program is free software, you can redistribute it and/or modify it under the terms and
-// conditions of CANN Open Software License Agreement Version 2.0 (the "License").
-// Please refer to the License for details. You should not use this file except in compliance with the License.
+// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+// CANN Open Software License Agreement Version 2.0 (the "License").
+// Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
-// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT OF MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
 // 设置页「保存配置」的凭据操作决策（planCredentialAction）UT + handleSave
-// 接线源级锁。回归背景（PR #38 审查意见）：旧 handleSave 的 else 分支把
+// 接线源级锁。回归背景（审查意见）：旧 handleSave 的 else 分支把
 // token/password 模式下的空输入一并送 DELETE——用户已存凭据后只想改
 // 分支/目录再保存，令牌框留空（placeholder「输入新值可更换」的空值语义 =
 // 不动）→ 已存凭据被静默清除，下次上传撞 no-credentials 引导重配。决策
@@ -73,7 +73,8 @@ describe('handleSave 接线（源级锁）', () => {
     // PUT 透传：保存 body 必须带 lfs（handleSave 函数体内）
     const handleSaveBody = src.slice(src.indexOf('async function handleSave'), src.indexOf('async function handleClear'));
     expect(handleSaveBody).toContain('lfs');
-    // 开关控件：状态翻转要触发 dirty（保存按钮可用性）
-    expect(src).toContain('onCheckedChange={(v) => { setLfs(v === true); dirty() }}');
+    // 开关控件：状态翻转要触发 dirty（保存按钮可用性）——Switch 语义与旧
+    // Checkbox 一致（onChange 收到 boolean）
+    expect(src).toContain('onChange={(v) => { setLfs(v); dirty() }}');
   });
 });

@@ -1,9 +1,9 @@
 // Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
 // This program is free software, you can redistribute it and/or modify it under the terms and conditions of
 // CANN Open Software License Agreement Version 2.0 (the "License").
-// Please refer to the License for details. Please do not use this file except in compliance with the License.
+// Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
-// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
 // 疑似人工复核端到端：fixture 会话（变量 rm → D2 疑似）→ GET 出卡（疑似先不扣分）
@@ -54,12 +54,12 @@ afterAll(async () => {
 });
 
 const scorecardGet = async () => {
-  const { GET } = await import('../../src/app/api/observe/session/scorecard/route');
+  const { GET } = await import('@/lib/observe/session-handlers/scorecard');
   const res = await GET(new NextRequest(`http://localhost/api/observe/session/scorecard?taskId=${SID}`));
   return res.json();
 };
 const adjudicatePost = async (body: Record<string, unknown>) => {
-  const { POST } = await import('../../src/app/api/observe/session/scorecard/adjudicate/route');
+  const { POST } = await import('@/lib/observe/session-handlers/scorecard-adjudicate');
   const res = await POST(new NextRequest('http://localhost/api/observe/session/scorecard/adjudicate', {
     method: 'POST', body: JSON.stringify(body),
   }));

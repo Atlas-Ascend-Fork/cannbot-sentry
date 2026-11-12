@@ -11,17 +11,6 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# 数据目录迁移：cannbot 时代（≤0.2.40）的 ~/.cannbot-insight 首启原子改名到
-# ~/.context-insight（与 bin/context-insight.mjs 同款幂等逻辑；显式
-# CONTEXT_INSIGHT_HOME / CONTEXT_PROXY_DIR 覆盖 = 用户自管目录，不掺和；
-# 两目录并存时沿用新目录不动旧目录）。
-if [ -z "${CONTEXT_INSIGHT_HOME:-}" ] && [ -z "${CONTEXT_PROXY_DIR:-}" ] \
-   && [ -d "$HOME/.cannbot-insight" ] && [ ! -e "$HOME/.context-insight" ]; then
-  if mv "$HOME/.cannbot-insight" "$HOME/.context-insight" 2>/dev/null; then
-    echo "[start.sh] 数据目录已迁移: $HOME/.cannbot-insight → $HOME/.context-insight"
-  fi
-fi
-
 # 启动器统一日志：与 TS 侧 logger 同款格式 [time][level][module]:message。
 # 屏幕恒显（启动器 UX 不受日志开关影响）；同时追加统一日志文件
 # （~/.context-insight/logs 或 CONTEXT_LOG_DIR），env CONTEXT_LOG /
@@ -46,12 +35,12 @@ slog() { # level module message
   echo "$line" >> "$LAKE_LOG_DIR/insight-$(date -u +%F).log" 2>/dev/null || true
 }
 
-# Node.js version check (>= 22.12.0 required; better-sqlite3@13 / commander@14 need Node 22+)
+# Node.js version check (>= 22.14.0 required; better-sqlite3@13 prebuilt segfaults on <=22.13, commander@15 needs >=22.12)
 NODE_NUM=$(node -e "const [M,m]=process.versions.node.split('.').map(Number);console.log(M*100+(m||0))" 2>/dev/null || echo "0")
-if [ "$NODE_NUM" -lt 2212 ]; then
+if [ "$NODE_NUM" -lt 2214 ]; then
   NODE_VERSION=$(node -v 2>/dev/null || echo "unknown")
-  slog WARN setup "Node.js $NODE_VERSION is not supported. Requires >= 22.12.0." >&2
-  slog WARN setup "better-sqlite3@13 needs Node >= 22; older versions segfault at runtime." >&2
+  slog WARN setup "Node.js $NODE_VERSION is not supported. Requires >= 22.14.0." >&2
+  slog WARN setup "better-sqlite3@13 prebuilt segfaults on Node 22.13 and below (verified by bisection)." >&2
 
   # Try auto-switch via nvm if available
   if command -v nvm &>/dev/null || [ -s "$HOME/.nvm/nvm.sh" ]; then
@@ -250,26 +239,68 @@ PORT=$BASE_PORT
 CONTEXT_HOME_DIR="$(dirname "${CONTEXT_PROXY_DIR:-${CONTEXT_INSIGHT_HOME:-$HOME/.context-insight}/proxy}")"
 INSIGHT_PORT_REGISTRY="$CONTEXT_HOME_DIR/insight-port"
 
-# 端口占用查询三级 fallback（与 pick-smart-agent-port.sh 同款）：本机 WSL2
-# 上 lsof 对部分 LISTEN 套接字失明（ss 可见 21025 占用、lsof 全列表为空，
-# 实测）——只信 lsof 会让 -k 恒报 "free"，next start EADDRINUSE 秒死，
-# 主脚本 wait 立即返回再被 trap 收尾（"把自己杀掉"的完整链条）。
+# 端口占用查询逐级补位（与 pick-smart-agent-port.sh 同款）：本机 WSL2 上
+# lsof 对部分 LISTEN 套接字失明（ss 可见 21025 占用、lsof 全列表为空，
+# 实测）——任一级"存在但失明"或整级缺失（CI 最小容器 ss/lsof/fuser 全无）
+# 都落到下一级，末级纯 /proc 兜底；只信单级会让 -k 恒报 "free"，next
+# start EADDRINUSE 秒死，主脚本 wait 立即返回再被 trap 收尾（"把自己
+# 杀掉"的完整链条）。
 port_pid() {
-  local port=$1
+  local port=$1 out
   if command -v ss >/dev/null 2>&1; then
-    ss -ltnp 2>/dev/null | grep ":$port " | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2
-  elif command -v lsof >/dev/null 2>&1; then
+    out=$(ss -ltnp 2>/dev/null | grep ":$port " | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2)
+  fi
+  if [ -z "$out" ] && command -v lsof >/dev/null 2>&1; then
     # -sTCP:LISTEN 必须：不带则 lsof 匹配连接两端，ESTABLISHED 的客户端
     # （cpx 自动导入 curl、API 探测等）会被一并误杀
-    lsof -ti "tcp:$port" -sTCP:LISTEN 2>/dev/null | head -1
-  elif command -v fuser >/dev/null 2>&1; then
-    fuser "$port/tcp" 2>/dev/null | tr -s ' ' '\n' | grep -E '^[0-9]+$' | head -1
+    out=$(lsof -ti "tcp:$port" -sTCP:LISTEN 2>/dev/null | head -1)
   fi
+  if [ -z "$out" ] && command -v fuser >/dev/null 2>&1; then
+    out=$(fuser "$port/tcp" 2>/dev/null | tr -s ' ' '\n' | grep -E '^[0-9]+$' | head -1)
+  fi
+  if [ -z "$out" ] && [ -r /proc/net/tcp ]; then
+    # 纯 /proc 兜底（无外部工具的最小镜像）：LISTEN（状态 0A）的本地端口 →
+    # socket inode → find -lname 单进程反查持有进程（逐 fd 起子进程做 readlink
+    # 在满载容器上单次秒级，fail-fast 等待循环会吃满调用方超时）
+    local hex inode hit
+    hex=$(printf '%04X' "$port")
+    inode=$(awk -v p=":$hex" '$4 == "0A" && $2 ~ p"$" {print $10; exit}' /proc/net/tcp /proc/net/tcp6 2>/dev/null)
+    if [ -n "$inode" ]; then
+      hit=$(find /proc/[0-9]*/fd -lname "socket:\[$inode\]" 2>/dev/null | head -1)
+      if [ -n "$hit" ]; then
+        hit=${hit#/proc/}
+        out=${hit%%/*}
+      fi
+    fi
+  fi
+  echo "$out"
 }
 
+# 占用快查（与 port_pid 分工）：只答「端口有没有人 LISTEN」，永不解析持有
+# 者。pid 解析（fd 扫描）是慢路径——击杀/诊断才需要；等待循环只调本函数，
+# 不在满载容器上反复付 fd 扫描的钱（fail-fast 路径 21 次调用曾吃满调用方
+# 60s 预算，CI 实测）。逐级补位同 port_pid：任一级"存在但失明"或整级缺失
+# 都落下一级，末级纯 /proc LISTEN 检查（单 awk 扫小文件，毫秒级）。
 port_busy() {
   local port=$1
-  [ -n "$(port_pid "$port")" ]
+  if command -v ss >/dev/null 2>&1; then
+    # ss -ltn 不带 -p（无 pid 解析，比 port_pid 的 -ltnp 便宜）
+    ss -ltn 2>/dev/null | grep -q ":$port " && return 0
+  fi
+  if command -v lsof >/dev/null 2>&1; then
+    [ -n "$(lsof -ti "tcp:$port" -sTCP:LISTEN 2>/dev/null)" ] && return 0
+  fi
+  if command -v fuser >/dev/null 2>&1; then
+    # 按输出而非退出码判定：失明 stub（exit 0 空输出）不能把空闲口误判成占用
+    [ -n "$(fuser "$port/tcp" 2>/dev/null | tr -s ' ' '\n' | grep -E '^[0-9]+$' | head -1)" ] && return 0
+  fi
+  if [ -r /proc/net/tcp ]; then
+    # 纯 /proc：LISTEN（状态 0A）表项存在即占用
+    local hex
+    hex=$(printf '%04X' "$port")
+    awk -v p=":$hex" '$4 == "0A" && $2 ~ p"$" {f=1} END {exit f ? 0 : 1}' /proc/net/tcp /proc/net/tcp6 2>/dev/null && return 0
+  fi
+  return 1
 }
 
 # 单实例端口收口：等待 BASE_PORT 释放（杀实例后内核回收套接字需要时间，
@@ -501,7 +532,7 @@ if [ "$CLI" = true ]; then
   slog INFO start "CLI exited, backend stopped"
 else
   # 服务端输出直接上屏（终端实时看 next 自身输出与统一日志的 stdout 通道）；
-  # 持久化由统一日志文件通道承担（~/.cannbot-insight/logs/），tmp/next-*.log
+  # 持久化由统一日志文件通道承担（~/.context-insight/logs/），tmp/next-*.log
   # 不再留服务期副本（用户选择：文件日志已有，屏幕直出即可）
   npx next $NEXT_CMD -H 127.0.0.1 --port $PORT 2>&1 &
   NEXT_PID=$!
@@ -515,7 +546,12 @@ else
       mkdir -p "$CONTEXT_HOME_DIR"
       echo "$PORT" > "$INSIGHT_PORT_REGISTRY"
       # WSL: use Windows cmd.exe to open browser
-      if grep -qi microsoft /proc/version 2>/dev/null && [ -x /mnt/c/Windows/System32/cmd.exe ]; then
+      # 浏览器副作用熔断（与 cpx 侧 openBrowser 同名同语义）：CI/headless/测试
+      # 环境显式关闭开浏览器。WSL 分支是绝对路径 exec（PATH 桩拦不住），没有
+      # 该熔断时自动化跑 start.sh 会在用户 Windows 桌面真弹浏览器
+      if [ -n "${CONTEXT_NO_BROWSER:-}" ]; then
+        slog INFO start "Browser opening skipped (CONTEXT_NO_BROWSER set) — open in your local browser: http://localhost:$PORT"
+      elif grep -qi microsoft /proc/version 2>/dev/null && [ -x /mnt/c/Windows/System32/cmd.exe ]; then
         /mnt/c/Windows/System32/cmd.exe /c start "http://localhost:$PORT" 2>/dev/null || true
       elif [ -n "$DISPLAY" ] && command -v xdg-open > /dev/null 2>&1; then
         xdg-open "http://localhost:$PORT" 2>/dev/null || true

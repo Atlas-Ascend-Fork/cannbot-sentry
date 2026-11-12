@@ -1,5 +1,35 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed（近期主线修复补记）
+- 【密钥清洗】`redactor` 补齐 `Authorization: Token/Bearer/Basic` 头回显（含大小写变体与短凭据）与裸 `api_key`/`API-KEY` 配置字段回显的打码；普通英文短语（"Token usage increased" 等）不误伤（`8f623e8`）
+- 【路由识别】`session-resolver` 接受 `/responses/` 尾斜杠形态，与代理路由的容忍行为对齐（`9dfc1d5`）
+- 【退出码透传】`cpx-cli` 的退出码如实反映被包装 agent 的退出结果：普通退出码原样透传，信号终止映射为 `128 + signal number`；捕获/导入失败不再覆盖 agent 的非零退出码（`321f44e`）
+- 【流转发韧性】捕获重组器抛出的异常不再打断向调用方的流式转发（含后续 chunk），捕获失败仅记录日志（`111184e`）
+- 【provider 配置解析】OpenCode 配置（.json/.jsonc）在字符串外容忍尾逗号，与 OpenCode 自身解析器一致；`--model=<value>` 长等号形态可识别（`6bed618`、`0627940`）
+- 【重组器健壮性】`stream-reassembler` 对非对象 JSON 事件（null/true/数字/字符串/数组/残缺对象）跳过而非中断，同 chunk 内后续事件正常捕获
+
+## [v0.1.14] - 2026-11-09
+
+### Added
+- 【E2E 全面覆盖（会话级深水区）】新增 8 spec / 22 用例，e2e 12 文件 37 用例 → 20 文件 59 用例：
+  - 对话连续性：多轮增量（回显不重落 / roundIndex）、/resume 侧滚动双文件、注入去重 [已压缩] 占位（env override）、title-gen 零捕获
+  - 子代理四形态（统一 <父sid>/subagents/ 布局）：claude（Agent 派发 + **异步回填竞态**——子代理 emit 先于父派发收集，meta 挂起后补写）、opencode（x-parent-session-id 声明式 + task 族派发）、codex（spawn_agent + function_call_output 富化 + **父守卫** + **压缩 resync** 锚失配 multiset 差分）、dsh（wire 自描述框架标签 + body 血缘）
+  - provider 隧道全链路：注入反解 → /<pid>/ 前缀剥净直达上游 → 捕获；cannbot UA 分流（协议≠框架）
+  - 韧性六件：上游 5xx 透传零吞、SIGINT 收尾（130 + 占位/清单清理 + `cpx status` 活会话观测）、1MB 大体量双向保真、gzip 请求体（转发字节不动 + 捕获透明解压）、并发到达序（落盘序=到达序≠完成序）、陈旧占位启动清扫
+  - CLI 面：--version/--help（版本单源）、completion 词表 + __complete、list（framework/protocol 列 + at-rest）、config dedup on 热开关文件联动
+  - harness 三扩展：protocolAgent（五模式 × 请求序列/并发/gzip/延时）、剧本队列（同路由差异化应答）+ 应答延时、startCpx（信号操控会话）
+- 【E2E 测试框架（insight 架构同款）】`tests/e2e/` 收编为 harness + spec 两层：`harness/` 六件套（constants 单一事实源 / sandbox 环境隔离五件套 / upstream-stub 三协议剧本桩+请求台账 / fake-agent 三标准件 / capture 断言+验收哨兵 / session 旅程驱动），spec 一律引用不自带。既有 8 个 ad-hoc e2e 中 7 个收编（cannbot-pack 为产物审计不涉进程，保持原样），环境纪律统一补齐（出口代理剥净、agent 端点发现变量默认剥除、XDG 配置面隔离）
+- 【协议旅程补全】新增三协议全链路 spec：anthropic（流式+非流，sid 头路由 vs 钉定占位清理的双向证明）、responses（codex 通道 thinking/text/tool_use 三态块）；透传保真 + 密钥零泄漏成对断言（上游台账逐字节对账 + 认证头到达 + 捕获全文零机密）；会话生命周期退出链（.sids manifest 消费 → 7z at-rest + governed 标记 → mock insight 导入契约）；e2e 覆盖 8 文件 32 用例 → 12 文件 37 用例
+- 【验收哨兵】claude-jsonl 消费契约哨兵（每行可解析 + 形状齐备 + x_lake 声明信封——insight 零改动消费的生产者侧锁）随所有旅程 spec 生效
+- 【泄漏进程不变量】`run-tests.sh e2e` 收尾 pgrep 自查本仓 `src/server.ts` 零存活（fail-fast，防「用例全绿但机器漏僵尸代理」的静默劣化）
+- 【一条命令门禁】`npm test` = ut + e2e 全覆盖（原 `test:all` 退役，新增 `test:ut` 快速回路）
+- 【套件架构文档】`tests/e2e/README.md`：真栈映射表、harness 清单、哨兵语义、spec 矩阵、已知陷阱（responses 转发剥 /v1、vitest worker 死锁、at-rest .7z 等）
+
+### Fixed
+- 【insight 包路径可移植性】`writer-compression` 源级锁硬编码 `../insight`，产品部署目录名 `context-insight` 下必红——双名探测 + 缺席 skipIf（run-tests.sh 的 vitest 借用同步补第二候选）
+
 ## [v0.1.12] - 2026-10-27
 
 > 更名说明：npm 包主体自本版起为 `context-cpx`（命令仍为 `cpx`，捕获目录 `~/.context-insight/proxy/`）；`cannbot-proxy` 转为同内容变体包。捕获格式契约与 insight ≥ v0.2.41 配套。
@@ -17,6 +47,12 @@
 - undici 6.28.1 → 6.29.1：闭环 CVE-2026-109869（7.5 High）/ CVE-2026-109924（5.9 Medium）
 
 格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)。
+
+## [v0.1.13] - 2026-10-31
+
+### Changed
+- 【版本定版】版本号升至 0.1.13；注释勘误与子代理编号空值兜底
+- 【网关语义对齐】cannbot 内建 provider 的网关上游不再内置公网默认网关（公共化决策：网关地址属于部署环境，不随包分发）：未配置 `provider.cannbot.options.baseURL` 时启动即 fail-fast 退出并给出配置指引（指向全局配置根与私有化手填），绝不静默直连零捕获；IT 锁「未配置 fail-fast / 已配置放行」双门
 
 ## [v0.1.11] - 2026-10-21
 
