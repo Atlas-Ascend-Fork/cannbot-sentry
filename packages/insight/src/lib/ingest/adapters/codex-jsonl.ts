@@ -9,10 +9,17 @@
 import fs from 'node:fs';
 import { truncateUtf16Safe } from '@/lib/shared/text-strip';
 import path from 'node:path';
-import { readCaptureHead } from '@/lib/compression';
+import { readCaptureBuffer, readCaptureHead } from '@/lib/compression';
 import type { SessionListItem, RawInteraction, ToolCallInfo, TokenUsage } from '../../shared/types';
 import { classifyCodexUserInjection } from './injections/codex';
 import { isRolloutFileName, rolloutSessionIdOf } from './codex-naming';
+import {
+  codexStreamSessionIdOf,
+  codexChunkExitCodeOf,
+  writeStdinSessionIdOf,
+  writeStdinCharsOf,
+  stripExecOutputHeader,
+} from '../../tool-conventions';
 
 // ── codex 原生会话适配器（agent-source-framework 首个新框架客户）──────
 // 数据源：~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl（codex CLI
@@ -149,7 +156,20 @@ function parseRolloutBuffer(buf: Buffer, filePathForWarn?: string): CodexRollout
 }
 
 export function parseRolloutLines(filePath: string): CodexRolloutLine[] {
-  return parseRolloutBuffer(fs.readFileSync(filePath), filePath);
+  return parseRolloutBuffer(readCaptureBuffer(filePath), filePath);
+}
+
+function isCodexCandidateFileName(fileName: string): boolean {
+  if (isRolloutFileName(fileName)) return true;
+  const lower = fileName.toLowerCase();
+  return lower.endsWith('.jsonl') || lower.endsWith('.jsonl.7z') || lower.endsWith('.jsonl.gz');
+}
+
+function sessionIdFromCodexFileName(fileName: string): string | null {
+  const rolloutId = rolloutSessionIdOf(fileName);
+  if (rolloutId) return rolloutId;
+  const match = fileName.match(/^(.+?)\.native\.jsonl(?:\.7z|\.gz)?$/i);
+  return match?.[1] ?? null;
 }
 
 function readSessionMeta(lines: CodexRolloutLine[]): SessionMetaInfo {
@@ -185,14 +205,24 @@ function extractMessageText(content: CodexContentPart[] | undefined): string | n
 
 function mapUsage(u: CodexUsage | undefined): TokenUsage | null {
   if (!u) return null;
-  const input = u.input_tokens ?? 0;
-  const cacheRead = u.cached_input_tokens ?? 0;
-  const cacheWrite = u.cache_write_input_tokens ?? 0;
-  const output = u.output_tokens ?? 0;
-  const reasoning = u.reasoning_output_tokens ?? 0;
-  const inputMessagesTokens = input + cacheRead + cacheWrite;
+  // Responses usage 的 input_tokens 已包含 cached_input_tokens；
+  // cache_write_input_tokens 是非缓存 input 的子集（上游 non_cached_input
+  // 定义为 input-cached，cache write 不额外外挂）。output_tokens 则可能包含
+  // reasoning_output_tokens。落库前拆成互不重叠的输入/输出桶，消费层才能
+  // 继续用 input+cacheRead+cacheWrite、output+reasoning 求和而不重复计数。
+  const inputMessagesTokens = u.input_tokens ?? 0;
+  const cacheRead = Math.min(u.cached_input_tokens ?? 0, inputMessagesTokens);
+  const cacheWrite = Math.min(u.cache_write_input_tokens ?? 0, inputMessagesTokens - cacheRead);
+  const input = Math.max(0, inputMessagesTokens - cacheRead - cacheWrite);
+  const rawOutput = u.output_tokens ?? 0;
+  const reasoning = Math.min(u.reasoning_output_tokens ?? 0, rawOutput);
+  const fromProviderTotal = u.total_tokens != null
+    ? Math.max(0, u.total_tokens - inputMessagesTokens - reasoning)
+    : null;
+  const output = fromProviderTotal ?? Math.max(0, rawOutput - reasoning);
+  const total = u.total_tokens ?? (inputMessagesTokens + output + reasoning);
   return {
-    total: u.total_tokens ?? (inputMessagesTokens + output + reasoning),
+    total,
     input,
     output,
     reasoning,
@@ -392,6 +422,20 @@ function readSessionFromLines(lines: CodexRolloutLine[]): RawInteraction[] {
           };
           toolCalls.push(tc);
           if (callId) toolCallIndex.set(callId, tc);
+        } else if (itemType === 'custom_tool_call') {
+          markGroupStart(line);
+          const callId = typeof payload.call_id === 'string' ? payload.call_id : '';
+          const input = payload.input;
+          const tc: ToolCallInfo = {
+            toolCallId: callId,
+            toolName: typeof payload.name === 'string' ? payload.name : 'custom_tool',
+            argsJson: typeof input === 'string' ? input : (input == null ? null : JSON.stringify(input)),
+            resultJson: null,
+            state: typeof payload.status === 'string' ? payload.status : 'completed',
+            startedAt: toMillis(line.timestamp),
+          };
+          toolCalls.push(tc);
+          if (callId) toolCallIndex.set(callId, tc);
         } else if (itemType === 'function_call_output') {
           // 输出晚于组冲刷到达：经全局索引回填
           const callId = typeof payload.call_id === 'string' ? payload.call_id : '';
@@ -404,6 +448,15 @@ function readSessionFromLines(lines: CodexRolloutLine[]): RawInteraction[] {
             tc.completedAt = toMillis(line.timestamp) ?? tc.completedAt ?? null;
           }
           // 未知 call_id（前文调用缺失/被裁剪）：丢弃，原文在盘上
+        } else if (itemType === 'custom_tool_call_output') {
+          const callId = typeof payload.call_id === 'string' ? payload.call_id : '';
+          const tc = callId ? toolCallIndex.get(callId) : undefined;
+          if (tc) {
+            const out = payload.output;
+            tc.resultJson = typeof out === 'string' ? out : (out != null ? JSON.stringify(out) : null);
+            tc.completedAt = toMillis(line.timestamp) ?? tc.completedAt ?? null;
+            tc.state = 'completed';
+          }
         } else if (itemType === 'web_search_call') {
           markGroupStart(line);
           const action = (payload.action ?? {}) as { type?: string; query?: string };
@@ -426,7 +479,185 @@ function readSessionFromLines(lines: CodexRolloutLine[]): RawInteraction[] {
   // 文件尾部残留组（未收到 usage 的中断响应）
   flushGroup(null, null);
 
+  rollUpStreamingExecs(result);
+
   return result;
+}
+
+// ── 流式 shell 卷回（exec_command + write_stdin → 单一逻辑工具调用）─────────
+// codex 的 exec_command 是流式终端协议：一次逻辑命令被物理拆成 1 个
+// exec_command（首块常只有「Process running with session ID N」块头）+ N 个
+// write_stdin 轮询块（session_id 关联、块间为输出增量 delta）。1:1 映射 wire
+// 形状会让所有下游（Turns 展示、Perf 时长、技能正文恢复、导出）各自再懂一遍
+// 这套传输协议——按「框架行为解释归 adapter」红线，在此单点卷回逻辑形状：
+//   - 属主 exec 吸收其全部轮询块：输出增量按到达序拼接、真实时长到最后一块、
+//     终态取末块退出码
+//   - 交互输入（write_stdin chars 非空）以 `[stdin] …` 行留痕，信息不丢
+//   - 轮询块是传输管道，不再作为工具调用出现；孤儿轮询块（属主不在本文件，
+//     如捕获裁剪起点之前发起）原样保留
+//   - 全部 exec_command 输出剥传输壳（Chunk ID/Wall time/…/Output:）——下游
+//     看到的即终端原文；旧库存量行仍带壳，读侧 stripExecOutputHeader 兼容
+//   - 轮级卷回：纯传输轮（整轮工具全部被吸收的 write_stdin 模型往返）并入
+//     属主 exec 的轮，成为同一「节拍」（agent 的一个完整行为单元 = 动作 +
+//     等待期）——685 个计费往返不再 1:1 映射成 685 轮（其中 342 轮是传输
+//     尸体：无正文无工具，胶片上只剩裸横线）。usage 字段分治：水位族
+//     （input/cacheRead/cacheWrite/inputMessagesTokens）取末次轮询读数、
+//     消耗族（output/reasoning/cost）求和、total 按「每轮 total = input +
+//     output + reasoning」恒等式重建（轮内与会话级一致性都保持）；思考按
+//     到达序并入属主轮正文；timeInfo.completed 延伸到末次轮询。latency
+//     不动（模型生成跨度原值——等待期已由 exec durationMs 承载，turnMs =
+//     latency + maxTool 的 turn-duration 单点不双计）。孤儿轮询轮（属主
+//     不在本文件）与混合轮（吸收了轮询块但还保留其他工具）不参与合并
+
+interface StreamingExecState {
+  /** 轮询块的输出增量与交互输入留痕（到达序） */
+  parts: string[];
+  /** 会话最后一块到达时刻（真实完成时刻） */
+  lastChunkTs: number | null;
+  /** 末块携带的退出码（running 块 → 维持前值） */
+  exitCode: number | null;
+}
+
+function rollUpStreamingExecs(result: RawInteraction[]): void {
+  const execs: ToolCallInfo[] = [];
+  const ownerBySession = new Map<number, ToolCallInfo>();
+  const stateByOwner = new Map<ToolCallInfo, StreamingExecState>();
+  // 轮级卷回索引：属主工具 → 属主交互；属主 → 纯传输轮（到达序）
+  const riOfOwner = new Map<ToolCallInfo, RawInteraction>();
+  const pollsByOwner = new Map<ToolCallInfo, RawInteraction[]>();
+
+  for (const ri of result) {
+    for (const tc of ri.tool_calls ?? []) {
+      if (tc.toolName !== 'exec_command' || tc.resultJson == null) continue;
+      execs.push(tc);
+      riOfOwner.set(tc, ri);
+      const sid = codexStreamSessionIdOf(tc.resultJson);
+      if (sid !== null && !ownerBySession.has(sid)) {
+        ownerBySession.set(sid, tc);
+        stateByOwner.set(tc, {
+          parts: [],
+          lastChunkTs: tc.completedAt ?? null,
+          exitCode: codexChunkExitCodeOf(tc.resultJson),
+        });
+      }
+    }
+  }
+  if (execs.length === 0) return;
+
+  let droppedAny = false;
+  for (const ri of result) {
+    const tcs = ri.tool_calls;
+    if (!tcs || tcs.length === 0) continue;
+    const kept: ToolCallInfo[] = [];
+    let dropped = false;
+    let pollOwner: ToolCallInfo | null = null;
+    for (const tc of tcs) {
+      const sid = tc.toolName === 'write_stdin' ? writeStdinSessionIdOf(tc.argsJson) : null;
+      const owner = sid !== null ? ownerBySession.get(sid) : undefined;
+      if (owner == null) {
+        kept.push(tc);
+        continue;
+      }
+      dropped = true;
+      droppedAny = true;
+      if (pollOwner == null) pollOwner = owner;
+      const st = stateByOwner.get(owner)!;
+      const chars = writeStdinCharsOf(tc.argsJson);
+      if (chars) st.parts.push(`[stdin] ${chars}\n`);
+      if (tc.resultJson != null) st.parts.push(stripExecOutputHeader(tc.resultJson));
+      const exitCode = codexChunkExitCodeOf(tc.resultJson ?? '');
+      if (exitCode !== null) st.exitCode = exitCode;
+      if (tc.completedAt != null && (st.lastChunkTs == null || tc.completedAt > st.lastChunkTs)) {
+        st.lastChunkTs = tc.completedAt;
+      }
+    }
+    if (dropped) {
+      ri.tool_calls = kept.length > 0 ? kept : null;
+      // 纯传输轮（整轮工具全部被吸收、无保留工具）→ 记入属主等待期
+      if (kept.length === 0 && pollOwner != null) {
+        const list = pollsByOwner.get(pollOwner);
+        if (list) list.push(ri);
+        else pollsByOwner.set(pollOwner, [ri]);
+      }
+    }
+  }
+
+  for (const tc of execs) {
+    const raw = tc.resultJson ?? '';
+    const st = stateByOwner.get(tc);
+    const exitCode = st != null ? st.exitCode : codexChunkExitCodeOf(raw);
+    tc.resultJson = st != null
+      ? [stripExecOutputHeader(raw), ...st.parts].join('')
+      : stripExecOutputHeader(raw);
+    if (st != null && st.lastChunkTs != null) tc.completedAt = st.lastChunkTs;
+    if (exitCode !== null && exitCode !== 0) tc.state = 'error';
+  }
+
+  // ── 轮级卷回：纯传输轮并入属主轮（节拍 = 动作 + 等待期）────────────────
+  if (pollsByOwner.size > 0) {
+    const merged = new Set<RawInteraction>();
+    for (const [owner, polls] of pollsByOwner) {
+      const ownerRi = riOfOwner.get(owner);
+      if (ownerRi == null) continue;
+      let acc = ownerRi.usage;
+      for (const poll of polls) {
+        // 思考按到达序并入：轮询期间的思考本来就属于这个节拍
+        if (poll.content) {
+          ownerRi.content = ownerRi.content != null
+            ? `${ownerRi.content}\n${poll.content}`
+            : poll.content;
+        }
+        const pu = poll.usage;
+        if (pu != null) {
+          // 字段分治：水位族取末次轮询读数（上下文在等待期末的真实水位），
+          // 消耗族求和（token 是真实产出）
+          const o = acc ?? { total: 0, input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, cost: 0, inputMessagesTokens: 0 };
+          acc = {
+            ...o,
+            output: o.output + pu.output,
+            reasoning: o.reasoning + pu.reasoning,
+            cost: o.cost + pu.cost,
+            input: pu.input,
+            cacheRead: pu.cacheRead,
+            cacheWrite: pu.cacheWrite,
+            inputMessagesTokens: pu.inputMessagesTokens,
+          };
+        }
+        const pEnd = poll.timeInfo?.completed ?? null;
+        if (pEnd != null && (ownerRi.timeInfo?.completed == null || pEnd > ownerRi.timeInfo.completed)) {
+          ownerRi.timeInfo = { created: ownerRi.timeInfo?.created ?? 0, completed: pEnd };
+        }
+        merged.add(poll);
+      }
+      if (acc != null) {
+        // total 恒等式重建（#39 拆桶口径）：每轮 total = inputMessagesTokens +
+        // output + reasoning，其中 inputMessagesTokens = input + cacheRead +
+        // cacheWrite（原始输入，含缓存）。节拍 total = 末次原始输入水位 + 节拍
+        // 总产出——轮内与会话级一致性都保持
+        acc.total = acc.inputMessagesTokens + acc.output + acc.reasoning;
+        ownerRi.usage = acc;
+      }
+      // latency 不动：模型生成跨度 = 属主轮原值（等待期已由 exec durationMs
+      // 承载，turnMs = latency + maxTool 的分解不双计）
+    }
+    for (let i = result.length - 1; i >= 0; i--) {
+      if (merged.has(result[i])) result.splice(i, 1);
+    }
+  }
+
+  // 纯传输空组（无正文/无工具/无 usage）不再作为会话事件；带 usage 的空组
+  // 保留（token 消耗是真实模型轮次——claude 适配器截断观测同款先例；codex
+  // 的轮询空组已在上方轮级卷回中并入属主轮，走不到这里）
+  if (droppedAny) {
+    for (let i = result.length - 1; i >= 0; i--) {
+      const ri = result[i];
+      const empty =
+        (ri.content == null || ri.content === '') &&
+        (ri.tool_calls == null || ri.tool_calls.length === 0) &&
+        ri.usage == null;
+      if (empty) result.splice(i, 1);
+    }
+  }
 }
 
 // ── 文件定位 ─────────────────────────────────────────────────────────
@@ -439,7 +670,7 @@ function collectRolloutFiles(dirPath: string): string[] {
       const full = path.join(dirPath, entry.name);
       if (entry.isDirectory()) {
         results.push(...collectRolloutFiles(full));
-      } else if (entry.isFile() && isRolloutFileName(entry.name)) {
+      } else if (entry.isFile() && isCodexCandidateFileName(entry.name)) {
         results.push(full);
       }
     }
@@ -451,7 +682,7 @@ function findRolloutFile(dirPath: string, sessionId: string): string | null {
   try {
     const entries = fs.readdirSync(dirPath, { withFileTypes: true });
     for (const entry of entries) {
-      if (entry.isFile() && rolloutSessionIdOf(entry.name) === sessionId) {
+      if (entry.isFile() && sessionIdFromCodexFileName(entry.name) === sessionId) {
         return path.join(dirPath, entry.name);
       }
     }
@@ -483,7 +714,7 @@ function resolveSessionFilePath(filePath: string, sessionId: string): string | n
 // 嵌会话 id；deriveSessionId 契约收完整路径（DSH 的 id 取日志父目录名），
 // 先剥目录再按命名约定提取，认不出返回 null
 export function deriveSessionIdFromPath(filePath: string): string | null {
-  return rolloutSessionIdOf(path.basename(filePath));
+  return sessionIdFromCodexFileName(path.basename(filePath));
 }
 
 export function readSession(filePath: string, sessionId: string): RawInteraction[] {
@@ -512,7 +743,7 @@ export function listSessions(dirPath: string): SessionListItem[] {
 
   const stat = fs.statSync(dirPath);
   const files = stat.isFile()
-    ? (isRolloutFileName(path.basename(dirPath)) ? [dirPath] : [])
+    ? (isCodexCandidateFileName(path.basename(dirPath)) ? [dirPath] : [])
     : collectRolloutFiles(dirPath);
 
   const result: SessionListItem[] = [];
@@ -672,23 +903,53 @@ export function readSubagentInteractions(filePath: string, sessionId: string): R
   // 此前直读目录会静默返回空：子代理轮次丢失、只剩通知 system turn。
   const resolved = resolveSessionFilePath(filePath, sessionId);
   if (!resolved) return [];
-  return readSubagentsInner(resolved, sessionId, 0);
+  const discovered: SubagentRollout[] = [];
+  discoverSubagentRollouts(resolved, sessionId, 0, new Set(), discovered);
+  const result: RawInteraction[] = [];
+  for (const sub of discovered) {
+    const interactions = readSessionFromLines(sub.lines);
+    for (const interaction of interactions) {
+      interaction.subagent_session_id = sub.agent.id;
+      if (sub.agent.nickname) interaction.subagent_name = sub.agent.nickname;
+    }
+    result.push(...interactions);
+  }
+  return result;
 }
 
-function readSubagentsInner(mainFile: string, sessionId: string, depth: number): RawInteraction[] {
-  if (depth > 5) return []; // 嵌套深度上限（防异常环）
+export function listSubagentRolloutFiles(filePath: string, sessionId: string): string[] {
+  const resolved = resolveSessionFilePath(filePath, sessionId);
+  if (!resolved) return [];
+  const discovered: SubagentRollout[] = [];
+  discoverSubagentRollouts(resolved, sessionId, 0, new Set(), discovered);
+  return discovered.map(s => s.filePath);
+}
+
+interface SubagentRollout {
+  agent: SpawnedAgent;
+  filePath: string;
+  lines: CodexRolloutLine[];
+}
+
+function discoverSubagentRollouts(
+  mainFile: string,
+  parentSessionId: string,
+  depth: number,
+  seenFiles: Set<string>,
+  out: SubagentRollout[],
+): void {
+  if (depth > 5) return;
   let lines: CodexRolloutLine[];
   try {
     lines = parseRolloutLines(mainFile);
   } catch {
-    return [];
+    return;
   }
 
-  const agents = extractSpawnedAgents(lines);
-  const result: RawInteraction[] = [];
-  for (const agent of agents) {
+  for (const agent of extractSpawnedAgents(lines)) {
     const childFile = locateRolloutById(mainFile, agent.id);
-    if (!childFile) continue; // 子文件丢失（被清理）：跳过不阻塞，spawn/wait 工具结果仍在主时间线
+    if (!childFile || seenFiles.has(childFile)) continue;
+    seenFiles.add(childFile);
     let childLines: CodexRolloutLine[];
     try {
       childLines = parseRolloutLines(childFile);
@@ -698,17 +959,13 @@ function readSubagentsInner(mainFile: string, sessionId: string, depth: number):
     const childMeta = readSessionMeta(childLines);
     // 交叉验证：parent_thread_id 必须指回主会话（防同 uuid 误配）；无声明时
     // 以 spawn 输出为准（老版本文件）
-    if (childMeta.parentThreadId && childMeta.parentThreadId !== sessionId) continue;
-
-    const interactions = readSessionFromLines(childLines);
-    const nickname = childMeta.agentNickname ?? agent.nickname;
-    for (const it of interactions) {
-      it.subagent_session_id = agent.id;
-      if (nickname) it.subagent_name = nickname;
-    }
-    result.push(...interactions);
+    if (childMeta.parentThreadId && childMeta.parentThreadId !== parentSessionId) continue;
+    out.push({
+      agent: { id: agent.id, nickname: childMeta.agentNickname ?? agent.nickname },
+      filePath: childFile,
+      lines: childLines,
+    });
     // 嵌套 spawn：孙代理并入（打各自的标）
-    result.push(...readSubagentsInner(childFile, agent.id, depth + 1));
+    discoverSubagentRollouts(childFile, agent.id, depth + 1, seenFiles, out);
   }
-  return result;
 }

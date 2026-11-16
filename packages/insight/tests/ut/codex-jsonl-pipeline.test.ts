@@ -26,6 +26,7 @@ import {
   listSessions,
   readSession,
   readSubagentInteractions,
+  listSubagentRolloutFiles,
   extractVersion,
 } from '@/lib/ingest/adapters/codex-jsonl';
 import {
@@ -196,6 +197,65 @@ describe('codex-jsonl readSession 状态机', () => {
     expect(webTurn!.tool_calls![0].resultJson).toContain('completed');
   });
 
+  it('custom_tool_call/output：apply_patch 工具调用可生成并回填结果', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-custom-tool-'));
+    const file = path.join(root, `rollout-2026-11-12T15-00-00-${MAIN}.jsonl`);
+    const startedAt = '2026-11-12T07:00:01.000Z';
+    const usageAt = '2026-11-12T07:00:02.000Z';
+    const completedAt = '2026-11-12T07:00:03.000Z';
+    const patchInput = '*** Begin Patch\n*** Add File: a.py\n+print(1)\n*** End Patch\n';
+    fs.writeFileSync(file, [
+      JSON.stringify({
+        timestamp: '2026-11-12T07:00:00.000Z', ordinal: 0, type: 'session_meta',
+        payload: { id: MAIN, session_id: MAIN, timestamp: '2026-11-12T07:00:00.000Z', cli_version: '0.167.0', thread_source: 'user' },
+      }),
+      JSON.stringify({ timestamp: '2026-11-12T07:00:00.100Z', ordinal: 1, type: 'turn_context', payload: { model: 'test-model' } }),
+      JSON.stringify({
+        timestamp: startedAt, ordinal: 2, type: 'response_item',
+        payload: {
+          type: 'custom_tool_call', id: 'ctc_call_patch', status: 'in_progress', call_id: 'call_patch',
+          name: 'apply_patch', input: patchInput,
+        },
+      }),
+      JSON.stringify({
+        timestamp: usageAt, ordinal: 3, type: 'token_usage_record',
+        payload: { usage: { input_tokens: 100, cached_input_tokens: 40, cache_write_input_tokens: 20, output_tokens: 20, reasoning_output_tokens: 5, total_tokens: 120 } },
+      }),
+      JSON.stringify({
+        timestamp: completedAt, ordinal: 4, type: 'response_item',
+        payload: { type: 'custom_tool_call_output', id: 'ctco_patch', call_id: 'call_patch', output: 'Success. Updated a.py' },
+      }),
+    ].join('\n') + '\n');
+    try {
+      const turns = readSession(file, MAIN);
+      expect(turns).toHaveLength(1);
+      const turn = turns[0];
+      expect(turn.timestamp).toBe(startedAt);
+      expect(turn.timeInfo?.created).toBe(Date.parse(startedAt));
+      expect(turn.usage).toMatchObject({
+        total: 120,
+        input: 40,
+        cacheRead: 40,
+        cacheWrite: 20,
+        inputMessagesTokens: 100,
+        output: 15,
+        reasoning: 5,
+      });
+      expect(turn.tool_calls).toHaveLength(1);
+      expect(turn.tool_calls![0]).toMatchObject({
+        toolCallId: 'call_patch',
+        toolName: 'apply_patch',
+        state: 'completed',
+        startedAt: Date.parse(startedAt),
+        completedAt: Date.parse(completedAt),
+        resultJson: 'Success. Updated a.py',
+      });
+      expect(turn.tool_calls![0].argsJson).toBe(patchInput);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('未知 payload 跳过 + 损坏行容错（fixture 内置锁）', () => {
     // 主 fixture 含 future_unknown_item 与一行坏 JSON——上两条断言能通过即证明
     // 没有炸；这里显式锁 interactions 数不受污染（9 原始行 - 2 静态注入）
@@ -220,6 +280,26 @@ describe('codex-jsonl 子代理发现（spawn 输出 + parent_thread_id 交叉�
     expect(kepler).toHaveLength(3);
     expect(euclid.every(s => s.subagent_name === 'Euclid')).toBe(true);
     expect(kepler.every(s => s.subagent_name === 'Kepler')).toBe(true);
+  });
+
+  it('listSubagentRolloutFiles：parent_thread_id 不匹配的文件不进入上传集合', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-sub-parent-'));
+    const mainCopy = path.join(root, path.basename(mainFile));
+    const wrongSub = path.join(root, path.basename(sub1File));
+    fs.copyFileSync(mainFile, mainCopy);
+    const wrongLines = fs.readFileSync(sub1File, 'utf-8').split('\n').map(line => {
+      if (!line.trim()) return line;
+      const row = JSON.parse(line) as { type?: string; payload?: { parent_thread_id?: string } };
+      if (row.type === 'session_meta' && row.payload) row.payload.parent_thread_id = 'not-the-main-session';
+      return JSON.stringify(row);
+    });
+    fs.writeFileSync(wrongSub, wrongLines.join('\n'));
+    try {
+      expect(listSubagentRolloutFiles(mainCopy, MAIN)).toEqual([]);
+      expect(readSubagentInteractions(mainCopy, MAIN)).toEqual([]);
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('目录路径与文件路径同结果（回归锁：UI「列表选择→导入」传 sessions 根目录）', () => {

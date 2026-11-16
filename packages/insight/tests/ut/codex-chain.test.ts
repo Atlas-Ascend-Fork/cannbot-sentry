@@ -6,25 +6,11 @@
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
-// codex 会话双路径集成测试（真机核实的 wire 形状，修复回归锁）：
-//   捕获路径（cpx codex-emitter → claude 布局 → claude-jsonl adapter）：
-//     1. exec_command cat SKILL.md → SkillEvent（此前 codex 无 Read 工具、
-//        检测只认 Read → Skills 面板恒空，真机实测模型真实调用技能但 0 事件）
-//     2. tool_use 行 ts < tool_result 行 ts → 工具时长非 0（此前
-//        completedAt 含 dump I/O 尾段开销，与下一轮 receivedAt 倒挂 →
-//        durationMs 被 clamp 成 0，真机实测 31ms 倒挂）
-//     3. cc-wire-round.reasoningTokens 信封 → Turn reasoningTokens（此前
-//        信封缺字段 → deepseek 系思考模型 reasoning 恒 0，真机实测 197 → 0）
-//     4. usage.reasoning_tokens 读侧兜底（旧版捕获件没有信封字段）
-//   原生路径（rollout → codex-jsonl adapter）：
-//     5. function_call 行 ts → startedAt、function_call_output 行 ts →
-//        completedAt（此前两字段恒缺 → 工具时长恒 0）
-//     6. 同一技能检测通道在原生路径生效
 import { describe, it, expect, beforeAll } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { readSession as readClaudeSession } from '../../src/lib/ingest/adapters/claude-jsonl.ts';
+import { listSessions as listClaudeSessions, readSession as readClaudeSession } from '../../src/lib/ingest/adapters/claude-jsonl.ts';
 import { readSession as readCodexSession } from '../../src/lib/ingest/adapters/codex-jsonl.ts';
 import { splitIntoTurns, resetIdCounter } from '../../src/lib/ingest/turn-split.ts';
 
@@ -81,10 +67,22 @@ describe('codex 捕获路径（cpx → claude-jsonl → turn-split）', () => {
     });
   });
 
-  it('cc-wire-round.reasoningTokens 信封 → assistant turn reasoning 非零', () => {
+  it('OpenAI/Responses usage 归一：cache 从 input 拆出、reasoning 从 output 拆出', () => {
     const t = turns.find(x => x.role === 'assistant');
     expect(t).toBeDefined();
+    expect(t!.inputTokens + t!.cacheReadTokens).toBe(8204);
+    expect(t!.inputTokens).toBe(1036);
+    expect(t!.cacheReadTokens).toBe(7168);
+    expect(t!.cacheWriteTokens).toBe(0);
+    expect(t!.outputTokens).toBe(133);
     expect(t!.reasoningTokens).toBe(197);
+    expect(t!.totalTokens).toBe(8534);
+  });
+
+  it('会话预览 token 与归一后的 turn 总量同口径', () => {
+    const listed = listClaudeSessions(CAPTURE_FIXTURE);
+    expect(listed).toHaveLength(1);
+    expect(listed[0].totalTokens).toBe(8534 + (8818 + 265));
   });
 });
 
