@@ -40,10 +40,6 @@ execSync(`git init --bare -b main "${BARE}"`, { stdio: 'pipe' });
 git('git config uploadpack.allowFilter true', BARE);
 git('git config uploadpack.allowAnySHA1InWant true', BARE);
 execSync(`git clone --quiet "${BARE}" "${SEED}"`, { stdio: 'pipe' });
-// CI 容器无全局 git 身份（Committer identity unknown）：仓本地身份兜底，
-// 覆盖 pull --rebase / merge 等一切产生提交的操作
-git('git config user.name seed', SEED);
-git('git config user.email seed@t', SEED);
 fs.writeFileSync(path.join(SEED, 'README.md'), '# lake bundle test\n');
 // 含 *.jsonl/*.gz LFS 行：bundle 上传同款剔除防线（remote.lfs=false）
 fs.writeFileSync(path.join(SEED, '.gitattributes'), '*.jsonl filter=lfs diff=lfs merge=lfs -text\n*.gz filter=lfs diff=lfs merge=lfs -text\n');
@@ -185,7 +181,7 @@ function pushSeedFiles(files: Array<{ rel: string; content: string }>, message: 
   }
   git(`git ${NEUTRAL} add .`, SEED);
   git(`git -c user.name=seed -c user.email=seed@t commit -q -m "${message}"`, SEED);
-  git(`git ${NEUTRAL} pull --rebase -q origin main`, SEED);
+  git(`git ${NEUTRAL} -c user.name=seed -c user.email=seed@t pull --rebase -q origin main`, SEED);
   git(`git ${NEUTRAL} push -q origin main`, SEED);
 }
 
@@ -404,6 +400,17 @@ describe('bundle 导入：物化 → 解压 → run 导入 job → Run 工作台
 
     expect((await route.POST(makeRequest({ action: 'bundle-import' }))).status).toBe(400); // 缺 runId
     expect((await route.POST(makeRequest({ action: 'bundle-upload' }))).status).toBe(400); // 缺 runId
+    const soloRes = await route.POST(makeRequest({
+      action: 'bundle-upload',
+      runId: 'solo:94b6ab9d-b603-4777-910a-24d13e15c9c4',
+      description: '提交人: 张三',
+    }));
+    expect(soloRes.status).toBe(400);
+    expect(await soloRes.json()).toMatchObject({
+      reason: 'solo-run-not-bundle',
+      taskId: '94b6ab9d-b603-4777-910a-24d13e15c9c4',
+      action: 'upload',
+    });
     expect((await route.POST(makeRequest({ action: 'nope' }))).status).toBe(400);
 
     // paradigm 透传 = 精确物化（所在目录 reduction）

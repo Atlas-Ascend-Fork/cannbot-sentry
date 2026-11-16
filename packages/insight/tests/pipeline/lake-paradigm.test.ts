@@ -39,10 +39,6 @@ execSync(`git init --bare -b main "${BARE}"`, { stdio: 'pipe' });
 git('git config uploadpack.allowFilter true', BARE);
 git('git config uploadpack.allowAnySHA1InWant true', BARE);
 execSync(`git clone --quiet "${BARE}" "${SEED}"`, { stdio: 'pipe' });
-// CI 容器无全局 git 身份（Committer identity unknown）：仓本地身份兜底，
-// 覆盖 pull --rebase / merge 等一切产生提交的操作
-git('git config user.name seed', SEED);
-git('git config user.email seed@t', SEED);
 fs.writeFileSync(path.join(SEED, 'README.md'), '# paradigm it\n');
 for (const d of PARADIGM_DIRS) {
   fs.mkdirSync(path.join(SEED, d), { recursive: true });
@@ -230,13 +226,11 @@ describe('范式网关：必填 + 动态白名单 + 自定义远端拦截', () =
     fs.mkdirSync(path.join(seedDir, 'sessions', SID_P2), { recursive: true });
     fs.writeFileSync(path.join(seedDir, 'sessions', SID_P2, `${SID_P2}.jsonl`), '{}\n');
     execSync(`git init -q -b main`, { cwd: seedDir, stdio: 'pipe' });
-    execSync(`git config user.name t`, { cwd: seedDir, stdio: 'pipe' }); // merge 亦产生提交：CI 无全局身份
-    execSync(`git config user.email t@t`, { cwd: seedDir, stdio: 'pipe' });
     execSync(`git add -A`, { cwd: seedDir, stdio: 'pipe' });
     execSync(`git -c user.name=t -c user.email=t@t commit -q -m seed`, { cwd: seedDir, stdio: 'pipe' });
     // BARE 已有 main 分支：fetch 已有历史 + merge 允许无关历史 + push
     execSync(`git fetch -q "${BARE}" main`, { cwd: seedDir, stdio: 'pipe' });
-    execSync(`git merge -q --allow-unrelated-histories -m merge FETCH_HEAD`, { cwd: seedDir, stdio: 'pipe' });
+    execSync(`git -c user.name=seed -c user.email=seed@t merge -q --allow-unrelated-histories -m merge FETCH_HEAD`, { cwd: seedDir, stdio: 'pipe' });
     execSync(`git push -q "${BARE}" main`, { cwd: seedDir, stdio: 'pipe' });
     // 镜像需强制刷新（cache TTL / 新 commit 推入后 fetch 可见）
     await expect(() => mirror.materializeSession(SID_P2)).toThrow(/multiple locations/);
@@ -260,7 +254,7 @@ describe('viewer 范式目标文件不产生幻影根级会话（op-fusion 回�
   it('目标文件 + 范式会话并存：范式身份保持、无根目录桶、根级真会话仍可见', async () => {
     // ① 模拟 viewer 写目标文件（notes(viewer) commit + 与目录同名的裸 jsonl）
     git('git checkout -q main', SEED);
-    git('git pull --rebase -q origin main', SEED);
+    git('git -c user.name=seed -c user.email=seed@t pull --rebase -q origin main', SEED);
     fs.writeFileSync(path.join(SEED, 'contraction', 'contraction.jsonl'),
       JSON.stringify({ type: 'opgen-target', baselineMs: 39240000, expectedMs: 14400000, updatedAt: '2026-09-16T11:08:39.078Z' }) + '\n');
     git('git add .', SEED);
@@ -301,7 +295,7 @@ describe('quotepath：中文子目录不得产生带引号的重复目录条目'
   it('客户场景复现：<类别>/<中文月份>/ 布局 → listRemoteDirs 单一干净条目', () => {
     // seed 可能落后于 bare（uploadFolder 直接 push 过）→ 先 rebase 再推
     git('git checkout -q main', SEED);
-    git('git pull --rebase -q origin main', SEED);
+    git('git -c user.name=seed -c user.email=seed@t pull --rebase -q origin main', SEED);
     // 模拟 语料仓布局：类别目录 = ASCII、月份子目录 = 中文、外加纯
     // ASCII README（两条路径形态并存——正是触发双条目的组合）
     fs.mkdirSync(path.join(SEED, '09_fa_op_gen', '7月'), { recursive: true });

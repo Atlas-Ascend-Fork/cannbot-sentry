@@ -7,7 +7,7 @@
 // See LICENSE in the root of the software repository for the full text of the License.
 
 // 设置页「保存配置」的凭据操作决策（planCredentialAction）UT + handleSave
-// 接线源级锁。回归背景（审查意见）：旧 handleSave 的 else 分支把
+// 接线源级锁。回归背景：旧 handleSave 的 else 分支把
 // token/password 模式下的空输入一并送 DELETE——用户已存凭据后只想改
 // 分支/目录再保存，令牌框留空（placeholder「输入新值可更换」的空值语义 =
 // 不动）→ 已存凭据被静默清除，下次上传撞 no-credentials 引导重配。决策

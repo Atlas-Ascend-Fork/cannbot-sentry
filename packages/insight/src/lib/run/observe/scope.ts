@@ -8,9 +8,13 @@
 
 // run 作用域解析器（design: docs/design/run-observe-parity/design.md §3.1）：
 // runId → ObserveScope。成员身份经 session-link（run 域唯一触 DB 模块）join，
-// 结构归因取 manifest graph 注解。LRU 短 TTL——run 本体不可变，但成员会话
-// 重导入会换行（rowId 变），60s 内容忍陈旧身份；缓存只存身份不存指标，
-// 指标恒由 collector 现算，无失效正确性问题。
+// 结构归因取 manifest graph 注解。LRU 短 TTL；缓存只存身份不存指标，指标恒由
+// collector 现算。身份也非「容忍陈旧」项——重导会换行（rowId 变），死行 id
+// 会令一切 collector 静默查空，故正确性不靠 TTL 兜底，靠摄取突变处的
+// invalidateObservationCaches 单点失效（TTL 只是最后防线）。
+//
+// 消费方（12+ run 端点）经 resolveRunScope 拿成员行 id 做 IN 查询；本模块的
+// 缓存失效出口归 observe/invalidation 单点调用，路由层不直接 import 本函数。
 
 import type { PrismaClient } from '@prisma/client';
 import { LruCache } from '@/lib/lru-cache';
@@ -22,12 +26,18 @@ import { isSoloRunId, soloTaskIdOf } from '@/lib/run/identity';
 
 const scopeCache = new LruCache<string, ObserveScope>(16, 60_000);
 
+/** 摄取突变后清空（observe/invalidation 单点调用）：成员行 id 在重导时换行，
+ * 死行 id 会让 collector 静默查空——不失效就是正确性 bug，见模块头注释 */
+export function invalidateRunScopeCache(): void {
+  scopeCache.clear();
+}
+
 /** runId → 观测作用域；run 不存在返回 null。成员资格 = 成员位引用了会话
  *  （reader.sessionMembers，图注解可选）；按 rowId 去重——同一会话被多个
  *  成员位引用（如 execute 兼 verify，罕见）时优先图位结构归因，保证
  *  collectors 的 IN 查询不双计。
  *  solo:<taskId>（刀H）：不读 run-store，直接从 Prisma 合成单成员作用域
- *  （成员无图结构 → memberShortNames 回落短 taskId）。 */
+ *  （单主 Agent 固定展示为 主Agent）。 */
 export async function resolveRunScope(runId: string, prisma: PrismaClient): Promise<ObserveScope | null> {
   const cached = scopeCache.get(runId);
   if (cached) return cached;
@@ -36,9 +46,6 @@ export async function resolveRunScope(runId: string, prisma: PrismaClient): Prom
     const lookup = await sessionRefsByTaskIds([taskId], prisma);
     const ref = lookup.get(taskId);
     if (!ref) return null;
-    const [label] = memberShortNames([{
-      taskId, nodeId: null, generation: null, attempt: null, role: null, memberName: null,
-    }]);
     const scope: ObserveScope = {
       kind: 'run',
       runId,
@@ -46,7 +53,7 @@ export async function resolveRunScope(runId: string, prisma: PrismaClient): Prom
         rowId: ref.rowId,
         taskId,
         framework: ref.framework,
-        label: label ?? taskId,
+        label: '主Agent',
         structure: null,
       }],
     };

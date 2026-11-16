@@ -462,7 +462,7 @@ describe('redactRemoteSecrets：错误消息出边界前脱敏', () => {
   });
 });
 
-describe('credentialTestMessage：测试连接结论文案（审查意见：owner=null 不得伪称已验证）', () => {
+describe('credentialTestMessage：测试连接结论文案（owner=null 不得伪称已验证）', () => {
   it('gitcode + owner=null（令牌无效/过期/属主查询失败）→ 凭据未能验证；绝不出现「凭据已验证」', () => {
     const m = remote.credentialTestMessage({ owner: null, account: 'someone', authMode: 'token', isGitcode: true });
     expect(m).toMatch(/凭据未能验证/);
@@ -489,7 +489,7 @@ describe('credentialTestMessage：测试连接结论文案（审查意见：owne
   });
 });
 
-describe('ls-remote 凭据通道接线（源级锁，审查意见回归锚点）', () => {
+describe('ls-remote 凭据通道接线（源级锁）', () => {
   const read = (rel: string): string => fs.readFileSync(path.resolve(__dirname, rel), 'utf8');
 
   it('test/branches 的 ls-remote 一律经 runGitWithAuth 供给解析链凭据，URL 零内嵌', () => {

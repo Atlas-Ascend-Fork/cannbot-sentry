@@ -6,7 +6,7 @@
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
-// 测试连接属主文案回归锁（审查意见）：token 模式不带账户是常态——
+// 测试连接属主文案回归锁：token 模式不带账户是常态——
 // 前端 lakeRemoteInput 只上送 {authMode,token}（account 不随请求），
 // CannbayTokenDialog 保存同样 username||'oauth2'，requestAuth.username 亦
 // 兜底 'oauth2'。旧接线把 pushAuth.username 传给 credentialTestMessage 的

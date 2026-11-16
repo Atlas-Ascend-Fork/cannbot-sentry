@@ -6,10 +6,6 @@
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
-// @vitest-environment happy-dom
-// lake 会话表框架徽标回归锁：框架族全覆盖（claude/opencode/cannbot/codex/
-// dsh）。codex 曾漏分支——客户实测 codex 捕获上传 contextBay 成功，但数据
-// 源列表 type 列恒显「—」（识别不出来）。
 import { describe, it, expect } from 'vitest';
 import { renderToString } from 'react-dom/server';
 import { createElement } from 'react';

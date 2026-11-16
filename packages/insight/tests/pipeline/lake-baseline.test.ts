@@ -34,10 +34,6 @@ execSync(`git init --bare -b main "${BARE}"`, { stdio: 'pipe' });
 git('git config uploadpack.allowFilter true', BARE);
 git('git config uploadpack.allowAnySHA1InWant true', BARE);
 execSync(`git clone --quiet "${BARE}" "${SEED}"`, { stdio: 'pipe' });
-// CI 容器无全局 git 身份（Committer identity unknown）：仓本地身份兜底，
-// 覆盖 pull --rebase / merge 等一切产生提交的操作
-git('git config user.name seed', SEED);
-git('git config user.email seed@t', SEED);
 fs.writeFileSync(path.join(SEED, 'README.md'), '# baseline it\n');
 for (const d of ['contraction', 'others']) {
   fs.mkdirSync(path.join(SEED, d), { recursive: true });
@@ -200,7 +196,7 @@ describe('baseline：位置即身份（上传 → 落位 → 列表 → 交换 �
     git('git add .', SEED);
     git('git -c user.name=seed -c user.email=seed@t commit -q -m "manual baseline structure"', SEED);
     // bare 仓已被 upload 推进（SEED 停在 init）→ rebase 后再推
-    git('git pull --rebase -q origin main', SEED);
+    git('git -c user.name=seed -c user.email=seed@t pull --rebase -q origin main', SEED);
     git('git push -q origin main', SEED);
 
     const scoped = lake.listLakeSessions(cfgCustom);

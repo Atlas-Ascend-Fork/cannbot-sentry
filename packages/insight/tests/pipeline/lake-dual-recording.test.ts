@@ -41,10 +41,6 @@ execSync(`git init --bare -b main "${BARE}"`, { stdio: 'pipe' });
 git('git config uploadpack.allowFilter true', BARE);
 git('git config uploadpack.allowAnySHA1InWant true', BARE);
 execSync(`git clone --quiet "${BARE}" "${SEED}"`, { stdio: 'pipe' });
-// CI 容器无全局 git 身份（Committer identity unknown）：仓本地身份兜底，
-// 覆盖 pull --rebase / merge 等一切产生提交的操作
-git('git config user.name seed', SEED);
-git('git config user.email seed@t', SEED);
 fs.writeFileSync(path.join(SEED, 'README.md'), '# dual recording it\n');
 fs.mkdirSync(path.join(SEED, PARADIGM), { recursive: true });
 fs.writeFileSync(path.join(SEED, PARADIGM, '.gitkeep'), '');
@@ -102,7 +98,7 @@ function seedLegacyBareDir(sid: string, meta: { producer: 'insight-export' | 'in
     x_lake: { schema: 'cc-session-meta', version: 1, data: { producer: meta.producer, framework: 'claude-code', ccVersion: meta.ccVersion, sid } },
   }));
   // mirror 侧上传（①-④）推进过远端，SEED 先 rebase 再推
-  git('git pull --rebase -q origin main', SEED);
+  git('git -c user.name=seed -c user.email=seed@t pull --rebase -q origin main', SEED);
   git('git add .', SEED);
   git(`git -c user.name=legacy -c user.email=legacy@t commit -q -m "legacy ${sid}"`, SEED);
   git('git push -q origin main', SEED);
@@ -229,7 +225,7 @@ describe('同 sid 双记录·lake 侧（sid × 记录类 全仓唯一）', () =>
     fs.writeFileSync(path.join(dir, `${SID_X}.meta.json`), JSON.stringify({
       x_lake: { schema: 'cc-session-meta', version: 1, data: { producer: 'insight-export', framework: 'claude-code', sid: SID_X } },
     }));
-    git('git pull --rebase -q origin main', SEED);
+    git('git -c user.name=seed -c user.email=seed@t pull --rebase -q origin main', SEED);
     git('git add .', SEED);
     git(`git -c user.name=evil -c user.email=evil@t commit -q -m "evil root"`, SEED);
     git('git push -q origin main', SEED);

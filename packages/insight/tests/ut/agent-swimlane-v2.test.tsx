@@ -98,7 +98,15 @@ function dblclick(node: Element) {
   })
 }
 
-const settleMeasure = () => new Promise(r => setTimeout(r, 300))
+// 越过 250ms 双击防抖窗口后分段让权（~900ms 余量轮询）：慢容器上固定
+// sleep 只留 50ms 竞态余量，timer 回调与渲染批次消化不过来——让权
+// 循环保证窗口必然到期、状态必然收敛，正向/负向断言都不再压线
+const settleMeasure = async () => {
+  await new Promise(r => setTimeout(r, 300))
+  for (let i = 0; i < 30; i++) {
+    await new Promise(r => setTimeout(r, 30))
+  }
+}
 
 
 describe('AgentSwimlaneV2 点击二元性：跳转 × 测时距', () => {
