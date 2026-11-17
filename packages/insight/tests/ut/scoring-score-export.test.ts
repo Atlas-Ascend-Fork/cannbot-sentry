@@ -6,7 +6,7 @@
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
-// Score 评测数据导出 IT（数据用于自循环演进 RSI）：域服务
+// Score 评测数据导出 IT（issue #116：数据用于自循环演进 RSI）：域服务
 // buildScoreExport（三层结构：分数层/匹配关系层/溯源层 + 缺卡容错）与
 // solo run 端点 GET 全链路（scope 解析 → 组装 → attachment）。独立 sid
 // （ses_scoreexp_*）+ tmp SCORING_* 目录隔离（不读不写真实用户目录）。
@@ -53,7 +53,7 @@ afterAll(async () => {
   fs.rmSync(TMP, { recursive: true, force: true });
 });
 
-describe('Score 评测数据导出（RSI 演进语料）', () => {
+describe('Score 评测数据导出（issue #116，RSI 演进语料）', () => {
   it('buildScoreExport：三层结构齐备（信封/维度定义快照/全员评分卡/便利聚合），缺卡成员带 error 不炸整包', async () => {
     const a = await seedSession('ses_scoreexp_a', [
       { args: '{"cmd":"ls"}' },

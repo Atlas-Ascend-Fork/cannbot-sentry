@@ -43,14 +43,14 @@ vi.mock('next/navigation', () => ({
 }))
 
 const RUN_ID = 'minidemo01'
-const SID_A = 'rob-ses-mini-a'
-const SID_B = 'rob-ses-mini-b'
-const SID_C = 'rob-ses-mini-c'
+const SID_A = 'rfmv-ses-mini-a'
+const SID_B = 'rfmv-ses-mini-b'
+const SID_C = 'rfmv-ses-mini-c'
 const SUB_SID = 'sub_bundler_1'
 const T0 = Date.parse('2026-10-13T02:00:12.000Z')
 
 const rewrite = (v: unknown): unknown => {
-  if (typeof v === 'string') return v.replace(/^ses_mini_/, 'rob-ses-mini-');
+  if (typeof v === 'string') return v.replace(/^ses_mini_/, 'rfmv-ses-mini-');
   if (Array.isArray(v)) return v.map(rewrite);
   if (v != null && typeof v === 'object') {
     return Object.fromEntries(Object.entries(v).map(([k, val]) => [k, rewrite(val)]));
@@ -77,7 +77,7 @@ const responseBody = {
   run: {
     runId: RUN_ID,
     kind: 'run' as const,
-    name: 'rob 多成员',
+    name: 'rfmv 多成员',
     status: viewModel.status,
     exportDataComplete: true,
     startedAt: '2026-10-13T02:00:00Z',

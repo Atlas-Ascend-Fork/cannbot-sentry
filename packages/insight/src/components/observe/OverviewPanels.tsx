@@ -6,19 +6,6 @@
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
-// Overview 组合面板（单一源，run 形状）：run 是基本单元——本面板渲染「一个
-// 执行单元」的总览（总览头 / Agent 泳道图 V2 / Skills / Tool Calls /
-// Error Turns），不感知 session/run 之分：线上工作台（RunOverviewTab，run 级
-// 端点取数，solo = 单成员退化）与离线导出（run 工作台自身即查看器，离线
-// 内核按档案应答同一 run 端点）同源消费，展示零复制。
-// 总览头 = 身份 + Σ指标一体：标题位（run 详情 = identity.run 下放身份
-// [短标题/状态/类型/runId]；session/导出查看器 = 框架名大标题）、元信息行
-// （框架[run 形态降入]/模型/成员/时间窗/代码统计/来源）、指标瓦片网格、
-// Wall Clock 活动圆环、Errors 可点击深链首个错误轮。
-// 纯展示契约：数据全走 props（identity/metrics 为聚合形状——run 级 = Σ成员，
-// 会话级 = 单成员值）；轮次跳转经 onOpenTurns 回调（member 归因随行——run
-// 工作台深链定位成员，session 视图无此维度时忽略即可）。时间维度（Agent
-// 泳道）不在此面——性能观测归 Perf 页执行时间线。
 
 import { useMemo, useState, useCallback } from "react"
 import type { ReactNode } from "react"
@@ -47,9 +34,6 @@ export interface OverviewRunIdentity {
   /** 展示短标题（prompt 自动命名的长文在消费侧截短；全文进 titleHint） */
   title: string
   titleHint?: string | null
-  status: string
-  /** 状态点色 class（如 bg-emerald-500；running 带脉冲） */
-  statusDot: string
   kindLabel: string
   kindVariant: "blue" | "purple"
   incomplete: boolean
@@ -408,10 +392,6 @@ export function OverviewPanels({ identity, metrics, turns, skills, pending = fal
                   {identity.run.title}
                 </h1>
                 <div className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1.5">
-                  <span className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-foreground/[0.05] px-2.5 py-0.5 text-[11px] font-medium dark:bg-foreground/[0.1]">
-                    <span className={`size-1.5 rounded-full ${identity.run.statusDot}`} aria-hidden />
-                    {identity.run.status}
-                  </span>
                   <Badge variant={identity.run.kindVariant} className="text-[11px]">{identity.run.kindLabel}</Badge>
                   {identity.run.incomplete ? (
                     <Badge variant="yellow" className="text-[11px]">数据不完整</Badge>

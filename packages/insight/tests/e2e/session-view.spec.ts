@@ -39,7 +39,7 @@ test.describe("Solo 会话视图", () => {
     await expect(page.locator('[data-testid="perf-tool-time"]')).toBeVisible();
   });
 
-  // Score 评测数据导出（RSI 自循环演进语料）：Score 板块内按钮 →
+  // Score 评测数据导出（issue #116，RSI 自循环演进语料）：Score 板块内按钮 →
   // score-export 端点 → JSON 下载（信封 + 全员评分卡 + 维度定义快照）
   test("评分数据导出：JSON 下载（insight-score-export@1）", async ({ page }) => {
     const run = new RunWorkbenchPO(page);

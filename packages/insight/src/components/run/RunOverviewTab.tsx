@@ -6,17 +6,6 @@
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
-// Run Overview tab（统一，run-first）：run 是基本单元——一律 run 级端点取数
-// （executions / turns / skills 全部不带 member，跨成员混切），solo run =
-// 单成员退化，bundle run = N 成员常态，零 kind 分支的数据路径。
-// 面板复用 OverviewPanels（单元总览单一源：总览头[身份+Σ大瓦片]/Skills/
-// Tool Calls/Error Turns，与离线导出 viewer 同源）；时间维度（Agent 泳道）
-// 归 Perf 页执行时间线，Overview 不再承载；bundle 专属的结构卡（代际/回滚/
-// 子图）+ 导入信息按 run-graph 存在性附加（solo run 无图结构，视图与
-// session 页对齐）。
-// Σ指标：memberStats（服务端聚合）+ executions Σ（llm/tool/skill/subagent）
-// + totalErrors（页级）；llmActiveMs 客户端按 assistant 轮在途窗口并集
-// （computeLlmActiveMs，与 session 详情同口径）。
 import { useEffect, useMemo, useState } from "react";
 import {
   OverviewPanels,
@@ -32,16 +21,6 @@ import { bandLabel } from "@/components/run/run-theme";
 import { computeLlmActiveMs } from "@/lib/session-duration";
 import { useRunDataEpoch } from "@/lib/run/data-epoch";
 import { summarizeToolCallErrors } from "@/lib/tool-call-errors";
-
-/** 状态点色（run 身份药丸的 leading dot；running 带脉冲动画） */
-const STATUS_DOT: Record<string, string> = {
-  passed: "bg-emerald-500",
-  failed: "bg-red-500",
-  running: "bg-amber-500 animate-pulse",
-  pending: "bg-muted-foreground/50",
-  carried: "bg-muted-foreground/50",
-  unknown: "bg-amber-500",
-};
 
 /** run 展示短标题：prompt 自动命名的长文按句读截短（先句子边界、再逗号
  *  分句、超长硬截 32 字），全文与 runId 进悬停 */
@@ -124,8 +103,6 @@ export function RunOverviewTab({ runId, run, viewModel, memberStats, totalErrors
       run: {
         title: shortRunTitle(run.name, run.runId),
         titleHint: `${run.name ?? run.runId}\n${run.runId}`,
-        status: run.status,
-        statusDot: STATUS_DOT[run.status] ?? "bg-muted-foreground/50",
         kindLabel: run.kind === "solo" ? "会话" : "工作流",
         kindVariant: run.kind === "solo" ? "blue" as const : "purple" as const,
         incomplete: run.exportDataComplete === false,

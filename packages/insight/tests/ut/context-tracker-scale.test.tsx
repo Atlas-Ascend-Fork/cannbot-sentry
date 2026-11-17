@@ -11,7 +11,7 @@
 // ContextTracker 大 run 自适应 IT（百级成员的真实形态——workflow run 成员墙）：
 // ①聚焦模式：agent 数超阈值（12）时默认只画峰值 Top-8 曲线（236 条曲线墙
 //   既不可读也难渲染），快捷控件补「峰值 Top」一键回焦，全显仍是用户显式
-//   选择（全部/仅 Root 语义不变）；
+//   选择（全部/主Agent 语义不变）；
 // ②图例折叠区：组数超阈值时胶囊折叠为预览前 16（可见组前置——预览先回答
 //   「图上正画着谁」）+ +N 展开（限高滚动区）+ 行首搜索按名过滤（带命中
 //   计数）——百级组里找任务是刚需；
@@ -250,5 +250,20 @@ describe('ContextTracker 大 run 自适应（百级成员收敛）', () => {
     expect(container.querySelectorAll('[data-agent-row]')).toHaveLength(0);
     // 胶囊全量平铺（4 组）
     expect(legendLabels(container)).toHaveLength(4);
+  });
+
+  it('历史 epoch 时间戳不参与时间域：单条 1970 数据不能把整张图拉回几十年前', async () => {
+    const realStart = '2026-10-13T02:00:00.000Z';
+    const turns = [
+      turn({ turnId: 'epoch-root', turnIndex: 0, member: { taskId: 's-era', label: 'era' }, createdAt: realStart, inputMessagesTokens: 1000, totalTokens: 1000 }),
+      turn({ turnId: 'epoch-bad', turnIndex: 1, member: { taskId: 's-era', label: 'era' }, createdAt: '1970-01-01T00:00:00.000Z', inputMessagesTokens: 1200, totalTokens: 1200 }),
+      turn({ turnId: 'epoch-real', turnIndex: 2, member: { taskId: 's-era', label: 'era' }, createdAt: '2026-10-13T02:00:10.000Z', inputMessagesTokens: 1400, totalTokens: 1400 }),
+    ];
+    const container = await render(turns, { 'root:s-era': 200000 });
+    const labels = Array.from(container.querySelectorAll('svg[data-chart="growth"] text')).map(n => n.textContent ?? '');
+    const d = new Date(realStart);
+    const hh = String(d.getHours()).padStart(2, '0');
+    expect(labels.some(label => label.startsWith(`${hh}:`))).toBe(true);
+    expect(labels).not.toContain('1/1');
   });
 });

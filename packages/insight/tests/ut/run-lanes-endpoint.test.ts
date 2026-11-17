@@ -38,9 +38,9 @@ const KNOWN = 'ses-lane-it-known';
 const NOLAKE = 'ses-lane-it-nolake';
 const WEAK = 'ses-lane-it-weak';
 const DUAL = 'ses-lane-it-dual';
-const POOL_A = 'rle-pool-a';
-const POOL_B = 'rle-pool-b';
-const POOL_C = 'rle-pool-c';
+const POOL_A = 'rfmv-ses-mini-a';
+const POOL_B = 'rfmv-ses-mini-b';
+const POOL_C = 'rfmv-ses-mini-c';
 const ALL = [KNOWN, NOLAKE, WEAK, DUAL, POOL_A, POOL_B, POOL_C];
 const OP_FUSION_DISPATCHES = [
   'P1 需求分析', 'R 门控：P1 审核',
@@ -55,11 +55,9 @@ const BUNDLE_RUN_ID = 'minidemo01';
 beforeAll(async () => {
   process.env.CONTEXT_INSIGHT_HOME = tmpHome;
   // bundle run：mini-bundle 清单（3 成员）落 run-store（HOME 隔离）；清单内
-  // sid 前缀改写为 rle-pool-（本文件专属，读写共享 test.db 的每个测试文件
-  // 必须持有互不重叠的 taskId 键空间——文件并行下 deleteMany/createMany 交错
-  // 才不会互相删行/撞 (taskId,framework) 唯一约束）
+  // sid 前缀改写避免与其它用例的库内 taskId 冲突（run-member-views 同款）
   const rewriteSid = (v: unknown): unknown => {
-    if (typeof v === 'string') return v.replace(/^ses_mini_/, 'rle-pool-');
+    if (typeof v === 'string') return v.replace(/^ses_mini_/, 'rfmv-ses-mini-');
     if (Array.isArray(v)) return v.map(rewriteSid);
     if (v != null && typeof v === 'object') {
       return Object.fromEntries(Object.entries(v).map(([k, val]) => [k, rewriteSid(val)]));

@@ -6,7 +6,7 @@
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
-// run turns 搜索端点的取数两级瘦身回归锁（审查意见的持久化）：此前
+// run turns 搜索端点的取数两级瘦身回归锁：此前
 // 一次重构删掉了①显式轻投影（不带顶层 select，Prisma 物化 Turn 全部标量
 // 列，含 contentJson / inputMessagesJson 这类 35MB 级全文字段）与②关键词
 // 候选下推（canPushDownKeyword + keywordFilter），关键词过滤全退回内存

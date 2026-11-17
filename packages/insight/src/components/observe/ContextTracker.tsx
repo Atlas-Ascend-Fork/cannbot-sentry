@@ -76,6 +76,12 @@ function formatTimestamp(ts: string | null): string {
   }
 }
 
+function validTimestampMs(ts: string | null): number | null {
+  if (!ts) return null;
+  const ms = new Date(ts).getTime();
+  return Number.isFinite(ms) && ms > 0 ? ms : null;
+}
+
 interface AgentStats {
   sessionId: string
   agentName: string
@@ -243,7 +249,7 @@ function computeAgentStats(turns: TurnRowItem[], limitOf: (sid: string) => numbe
     const member = agentTurns[0].member ?? null
     const contextLimit = limitOf(sid)
     const subagentType = isRoot ? null : agentTurns[0].subagentType ?? null
-    const agentName = agentTurns[0].agentName ?? (isRoot ? "Main Agent" : "?")
+    const agentName = agentTurns[0].agentName ?? (isRoot ? "主Agent" : "子Agent")
     const realInput = agentTurns.map(t => t.inputMessagesTokens || t.totalTokens)
     const cacheRead = agentTurns.map(t => t.cacheReadTokens ?? 0)
     const ctxPcts = agentTurns.map(t => t.contextWindowPct ?? 0).filter(p => p > 0)
@@ -271,7 +277,7 @@ function computeAgentStats(turns: TurnRowItem[], limitOf: (sid: string) => numbe
     const events: ContextEvent[] = []
 
     if (agentTurns.length > 0) {
-      events.push({ type: "start", turnIndex: agentTurns[0].turnIndex, timestamp: agentTurns[0].createdAt, contextSize: agentTurns[0].totalTokens, note: isRoot ? "Session 启动" : "Subagent 启动" })
+      events.push({ type: "start", turnIndex: agentTurns[0].turnIndex, timestamp: agentTurns[0].createdAt, contextSize: agentTurns[0].totalTokens, note: isRoot ? "Session 启动" : "子Agent 启动" })
     }
 
     for (let i = 1; i < agentTurns.length; i++) {
@@ -299,7 +305,7 @@ function computeAgentStats(turns: TurnRowItem[], limitOf: (sid: string) => numbe
     }
 
     if (agentTurns.length > 0) {
-      events.push({ type: "end", turnIndex: agentTurns[agentTurns.length - 1].turnIndex, timestamp: agentTurns[agentTurns.length - 1].createdAt, contextSize: agentTurns[agentTurns.length - 1].totalTokens, note: isRoot ? "Session 结束" : "Subagent 结束" })
+      events.push({ type: "end", turnIndex: agentTurns[agentTurns.length - 1].turnIndex, timestamp: agentTurns[agentTurns.length - 1].createdAt, contextSize: agentTurns[agentTurns.length - 1].totalTokens, note: isRoot ? "Session 结束" : "子Agent 结束" })
     }
 
     events.sort((a, b) => a.turnIndex - b.turnIndex)
@@ -474,7 +480,6 @@ function GrowthChart({ agentStats, contextWindowLimit, displayLabel, actors, onN
   // 空白取消——持久态，与悬浮/胶囊 hover 的瞬时高亮叠加（hover 优先）；表
   // 卡片不参与联动
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
-  const [viewMode, setViewMode] = useState<"area" | "line">("area")
   // 大 run 图例治理：胶囊折叠区（预览前 N + 展开限高滚动）+ 前缀搜索
   // （百级组里找任务是刚需）
   const [legendExpanded, setLegendExpanded] = useState(false)
@@ -581,13 +586,15 @@ function GrowthChart({ agentStats, contextWindowLimit, displayLabel, actors, onN
     const pts: Array<{ turnIndex: number; timestamp: number; inputTokens: number }> = []
     for (const s of filteredStats) {
       for (const t of s.turns) {
-        pts.push({ turnIndex: t.turnIndex, timestamp: t.createdAt ? new Date(t.createdAt).getTime() : 0, inputTokens: t.inputMessagesTokens })
+        const timestamp = validTimestampMs(t.createdAt)
+        if (timestamp != null) pts.push({ turnIndex: t.turnIndex, timestamp, inputTokens: t.inputMessagesTokens })
       }
       // 初始轮入时间域：run 时间线自派发消息起算（曲线原点锚可及），但
       // 不占 y 量程（inputTokens=0）也不进命中/悬浮域（allPoints 只供
       // minTime/maxTime/globalMaxInput）
-      if (s.birth?.createdAt) {
-        pts.push({ turnIndex: s.birth.turnIndex, timestamp: new Date(s.birth.createdAt).getTime(), inputTokens: 0 })
+      const birthTimestamp = validTimestampMs(s.birth?.createdAt ?? null)
+      if (s.birth && birthTimestamp != null) {
+        pts.push({ turnIndex: s.birth.turnIndex, timestamp: birthTimestamp, inputTokens: 0 })
       }
     }
     return pts
@@ -612,8 +619,8 @@ function GrowthChart({ agentStats, contextWindowLimit, displayLabel, actors, onN
     const winTurns: TurnRowItem[] = []
     for (const s of filteredStats) {
       for (const t of s.turns) {
-        const ts = t.createdAt ? new Date(t.createdAt).getTime() : 0
-        if (ts >= v0 && ts <= v1) winTurns.push(t)
+        const ts = validTimestampMs(t.createdAt)
+        if (ts != null && ts >= v0 && ts <= v1) winTurns.push(t)
       }
     }
     const winMaxInput = winTurns.length > 0 ? Math.max(...winTurns.map(t => t.inputMessagesTokens), 1) : globalMaxInput
@@ -670,11 +677,11 @@ function GrowthChart({ agentStats, contextWindowLimit, displayLabel, actors, onN
       const isRoot = s.isRoot
       const points = s.turns
         .filter(t => {
-          const ts = t.createdAt ? new Date(t.createdAt).getTime() : 0
-          return ts >= v0 && ts <= v1
+          const ts = validTimestampMs(t.createdAt)
+          return ts != null && ts >= v0 && ts <= v1
         })
         .map(t => ({
-          x: toXFn(t.createdAt ? new Date(t.createdAt).getTime() : 0),
+          x: toXFn(validTimestampMs(t.createdAt)!),
           y: toYFn(t.inputMessagesTokens),
           tokens: t.totalTokens,
           cacheRead: t.cacheReadTokens,
@@ -689,9 +696,9 @@ function GrowthChart({ agentStats, contextWindowLimit, displayLabel, actors, onN
       const ltp = lttb(points, RENDER_PT_TARGET)
       // 初始锚点：曲线从 0 生长——锚在初始轮时刻（初始轮即首数据轮时与其
       // 同 x，零宽 riser；monotonePath 零宽段直线跳转）；单轮 agent 不锚
-      // （保留在场点口径）。锚只进绘制序列（线 + 面积）与命中域，统计口径
+      // （保留在场点口径）。锚只进绘制序列与命中域，统计口径
       // 不动。x 取 min(birth, 首点)——序列保单调（原始轮序异常时不出回拐）
-      const birthTs = s.birth?.createdAt ? new Date(s.birth.createdAt).getTime() : null
+      const birthTs = validTimestampMs(s.birth?.createdAt ?? null)
       const anchor = points.length >= 2
         ? { x: Math.min(birthTs != null ? toXFn(birthTs) : points[0].x, points[0].x), y: toYFn(0) }
         : null
@@ -709,9 +716,8 @@ function GrowthChart({ agentStats, contextWindowLimit, displayLabel, actors, onN
           }
         : null
       const renderPoints = anchor ? [anchor, ...ltp] : ltp
-      const areaPoints = anchor ? [anchor, ...points] : points
       const hitPoints: GrowthHitPoint[] = anchorHit ? [anchorHit, ...points] : points
-      return { sessionId: s.sessionId, groupKey, color, label, isRoot, points, renderPoints, areaPoints, hitPoints, totalTurns: s.totalTurns, peakInput }
+      return { sessionId: s.sessionId, groupKey, color, label, isRoot, points, renderPoints, hitPoints, totalTurns: s.totalTurns, peakInput }
     })
 
     return {
@@ -743,11 +749,6 @@ function GrowthChart({ agentStats, contextWindowLimit, displayLabel, actors, onN
     setWin([n0, n1])
   }
   useEffect(() => { zoomAtRef.current = zoomAt })
-
-  function areaPathStr(pts: Array<{ x: number; y: number }>): string {
-    if (pts.length < 2) return ""
-    return `${monotonePath(pts)} L ${pts[pts.length - 1].x},${baselineY} L ${pts[0].x},${baselineY} Z`
-  }
 
   // 悬浮命中：client → 视口 → svg 用户坐标（图框恒定 1:1，手动数学，不依赖
   // getScreenCTM——测试环境无 CTM 也可精确推演）。ref 持有最新闭包：滚轮/
@@ -964,23 +965,6 @@ function GrowthChart({ agentStats, contextWindowLimit, displayLabel, actors, onN
             </p>
           </div>
           <div className="flex items-center gap-2">
-            {/* 分段控件：面积/折线 */}
-            <div className="inline-flex items-center gap-0.5 rounded-full bg-muted p-0.5" role="group" aria-label="图表模式">
-              {(["area", "line"] as const).map(m => (
-                <button
-                  key={m}
-                  type="button"
-                  aria-pressed={viewMode === m}
-                  onClick={() => setViewMode(m)}
-                  className={cn(
-                    "rounded-full px-2.5 py-1 text-xs transition-all duration-300",
-                    viewMode === m ? "bg-background font-medium text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {m === "area" ? "面积" : "折线"}
-                </button>
-              ))}
-            </div>
             {onOpenReplay && (
               <Button variant="outline" size="sm" className="h-7 gap-1.5 rounded-full px-3 text-xs" onClick={onOpenReplay}>
                 <PlayIcon className="size-3" />
@@ -1002,12 +986,6 @@ function GrowthChart({ agentStats, contextWindowLimit, displayLabel, actors, onN
           >
               <svg data-chart="growth" width={world.w} height={world.h} viewBox={`0 0 ${world.w} ${world.h}`} className="block">
                 <defs>
-                  {agentLines.map(line => (
-                    <linearGradient key={line.sessionId} id={`areaGrad-${line.sessionId}`} x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={line.color} stopOpacity={0.32} />
-                      <stop offset="100%" stopColor={line.color} stopOpacity={0.05} />
-                    </linearGradient>
-                  ))}
                   <clipPath id="plotClip">
                     <rect x={PADDING_LEFT} y={PADDING_TOP} width={plotWidth} height={plotHeight} />
                   </clipPath>
@@ -1043,19 +1021,6 @@ function GrowthChart({ agentStats, contextWindowLimit, displayLabel, actors, onN
                 {timeTicks.map((tick, i) => (
                   <text key={i} x={tick.x} y={baselineY + 16} textAnchor="middle" fontSize={9} style={{ fill: "var(--ctx-tick)" }}>{tick.label}</text>
                 ))}
-
-                {/* Area fills：root 常显（水位故事），子代理类型高亮时随线浮现 */}
-                {viewMode === "area" && agentLines.map(line => {
-                  const isActive = activeHighlight === line.groupKey
-                  const isWeakened = activeHighlight != null && !isActive
-                  if (line.points.length < 2) return null
-                  if (!line.isRoot && !isActive) return null
-                  return (
-                    <g key={`area-${line.sessionId}`} opacity={isWeakened ? 0.06 : isActive ? 1 : line.isRoot ? 0.75 : 0.5} clipPath="url(#plotClip)">
-                      <path className="ctx-area-in" d={areaPathStr(line.areaPoints)} fill={`url(#areaGrad-${line.sessionId})`} />
-                    </g>
-                  )
-                })}
 
                 {/* Agent lines：root 主线粗、子代理细线弱透明；逐轮圆点退役（悬浮
                     定位环仍在 tooltip 层），单轮子代理保留一个点——在场可证。
@@ -1290,7 +1255,7 @@ function GrowthChart({ agentStats, contextWindowLimit, displayLabel, actors, onN
             })()}
           </div>
 
-          {/* 画布内快捷显隐（玻璃分段控件，与右下缩放工具条对仗）：全部 / 仅 Root */}
+          {/* 画布内快捷显隐（玻璃分段控件，与右下缩放工具条对仗）：全部 / 主Agent */}
         <div data-quick-filter role="group" aria-label="显隐快捷" className="run-glass absolute top-3 left-3 flex items-center gap-0.5 rounded-full p-0.5">
           <button
             type="button"
@@ -1314,7 +1279,7 @@ function GrowthChart({ agentStats, contextWindowLimit, displayLabel, actors, onN
                 : "text-muted-foreground hover:text-foreground",
             )}
           >
-            仅 Root
+            主Agent
           </button>
           {agentStats.length > INLINE_GROUPS_MAX && (
             <button
@@ -1719,7 +1684,7 @@ function AgentDetailDialog({ open, onOpenChange, group, agentStats, selectedSid,
         <div className="flex flex-wrap items-center gap-1.5">
           <span className="size-2.5 shrink-0 rounded-full" style={{ backgroundColor: group.color }} />
           <span className="text-sm font-semibold">{group.label}</span>
-          <Badge variant="outline" className="text-[10px]">{sel.isRoot ? "root" : "subagent"}</Badge>
+          <Badge variant="outline" className="text-[10px]">{sel.isRoot ? "主Agent" : "子Agent"}</Badge>
           {!sel.isRoot && actor?.nameSource === "step" && (
             <Badge variant="outline" className="text-[10px] text-muted-foreground">派发</Badge>
           )}

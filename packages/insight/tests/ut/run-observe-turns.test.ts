@@ -28,17 +28,14 @@ const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'insight-run-observe-turns
 const ORIG_HOME = process.env.CONTEXT_INSIGHT_HOME;
 
 const RUN_ID = 'minidemo01';
-// 文件级前缀（rot- = run-observe-turns）：共享 test.db 下各文件前缀必须互不
-// 串扰——曾误用 scope 同款 rop- 前缀，并行 worker 的自愈清理互删对方行，
-// 级联删 turn 后 toolCall 落 FK 违约
-const MEMBER_SIDS = ['rot-ses-mini-a', 'rot-ses-mini-b', 'rot-ses-mini-c'];
+const MEMBER_SIDS = ['rop-ses-mini-a', 'rop-ses-mini-b', 'rop-ses-mini-c'];
 
 const ctx: { summaries: string[] } = { summaries: [] };
 
 beforeAll(async () => {
   process.env.CONTEXT_INSIGHT_HOME = tmpHome;
   const rewrite = (v: unknown): unknown => {
-    if (typeof v === 'string') return v.replace(/^ses_mini_/, 'rot-ses-mini-');
+    if (typeof v === 'string') return v.replace(/^ses_mini_/, 'rop-ses-mini-');
     if (Array.isArray(v)) return v.map(rewrite);
     if (v != null && typeof v === 'object') {
       return Object.fromEntries(Object.entries(v).map(([k, val]) => [k, rewrite(val)]));
@@ -132,9 +129,9 @@ describe('run 合并轮次观测（run-observe-parity 刀B）', () => {
     // 交错序：a0 → b0 → c0 → a1 → sub → b1（contentSummary 兜底 content 前 200 字）
     expect(data.items.map((i: { contentSummary: string | null }) => i.contentSummary)).toEqual(ctx.summaries);
     // 归因：首条归 a；子代理轮（第 5 条）同样归成员 a 的会话
-    expect(data.items[0].member).toMatchObject({ taskId: 'rot-ses-mini-a' });
+    expect(data.items[0].member).toMatchObject({ taskId: 'rop-ses-mini-a' });
     expect(data.items[4]).toMatchObject({ isSubagent: true, subagentSessionId: 'rop-sub-1' });
-    expect(data.items[4].member).toMatchObject({ taskId: 'rot-ses-mini-a' });
+    expect(data.items[4].member).toMatchObject({ taskId: 'rop-ses-mini-a' });
     // light 工具投影：a1 的 Read 工具调用
     const a1 = data.items[3];
     expect(a1.toolCalls).toEqual([{ toolCallId: 'rop-tc-read', toolName: 'Read', state: 'ok', durationMs: 0 }]);
@@ -181,7 +178,7 @@ describe('run 合并轮次观测（run-observe-parity 刀B）', () => {
       subagentName: 'rop-研究员',
       status: 'dispatched',
     });
-    expect(data.items[0].member).toMatchObject({ taskId: 'rot-ses-mini-a' });
+    expect(data.items[0].member).toMatchObject({ taskId: 'rop-ses-mini-a' });
   });
 
   it('跨成员搜索：工具 args 命中与正文命中均附 member 归因', async () => {
@@ -197,7 +194,7 @@ describe('run 合并轮次观测（run-observe-parity 刀B）', () => {
     const toolHit = await byKeyword('rop-needle');
     expect(toolHit.total).toBe(1);
     expect(toolHit.items[0]).toMatchObject({ matchField: 'toolArgs', toolName: 'Read' });
-    expect(toolHit.items[0].member).toMatchObject({ taskId: 'rot-ses-mini-a' });
+    expect(toolHit.items[0].member).toMatchObject({ taskId: 'rop-ses-mini-a' });
 
     const contentHit = await byKeyword('rop-bravo');
     expect(contentHit.total).toBe(2);

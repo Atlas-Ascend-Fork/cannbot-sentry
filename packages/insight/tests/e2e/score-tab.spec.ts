@@ -44,7 +44,7 @@ test.describe("Score 面板", () => {
     await page.getByTitle(E2E_TOOL_MEMBER_B, { exact: true }).click();
     await expect(panel.locator('svg[aria-label="六维能力雷达图"]').first()).toBeVisible({ timeout: 30_000 });
 
-    // 板块内导出钮（RSI 自循环演进语料出口）常驻
+    // 板块内导出钮（issue #116，RSI 自循环演进语料出口）常驻
     await expect(
       page.getByTitle("导出评分 JSON（全员评分卡 + 维度定义快照——RSI 自循环演进语料）"),
     ).toBeVisible();

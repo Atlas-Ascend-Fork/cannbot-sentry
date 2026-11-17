@@ -11,7 +11,7 @@
 // observe/collectors/search 单点；结果附 member 归因，契约镜像 session
 // turns/search 端点；design: docs/design/run-observe-parity/design.md §4）。
 // 搜索不受 member 过滤约束（跨成员定位是本端点的核心价值）。
-// 取数两级瘦身（审查意见）：①显式轻投影只取匹配所需列（不带顶层
+// 取数两级瘦身：①显式轻投影只取匹配所需列（不带顶层
 // select 时 Prisma 物化 Turn 全部标量列，含 contentJson / inputMessagesJson
 // 这类 35MB 级全文字段）；②关键词可安全下推时把候选过滤推到 SQL（见
 // canPushDownKeyword 注释），只对命中集跑 matchTurnSearch。

@@ -6,7 +6,7 @@
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
-// Score 评测数据导出端点（数据用于自循环演进 RSI）：run 全员评
+// Score 评测数据导出端点（issue #116：数据用于自循环演进 RSI）：run 全员评
 // 分卡 + 维度定义快照 + 便利聚合成单一 JSON（insight-score-export@1）。
 // GET 幂等只读（读最新缓存卡，无则现算确定性层——要新卡先 POST scorecard
 // 重算）。页面按钮与程序化拉取（curl）同款载荷——一份数据两个入口。run 级

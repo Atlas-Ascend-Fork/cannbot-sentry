@@ -9,7 +9,7 @@
 // 离线 HTML 导出往返（旗舰旅程）：在线工作台导出自包含 HTML（内联
 // export-view.js + 全量数据档案）→ Playwright 拿到下载文件 → file:// 直开
 // → 离线内核起播：tab 导航可用（内存栈）、Score 面板照常渲染、评分导出
-// 在离线态由档案行精确应答（离线口径）。语料 = solo
+// 在离线态由档案行精确应答（issue #116 的离线口径）。语料 = solo
 // claude-sample（体量小、导出快）。boot-server.sh 已构建 export-view.js。
 
 import { expect, test, type Page } from "./fixtures";

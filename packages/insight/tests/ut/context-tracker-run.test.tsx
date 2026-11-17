@@ -227,6 +227,15 @@ describe('ContextTracker run 泛化（泳道视角：session 即 agent）', () =
     expect(document.querySelector('[data-agent-detail]')).toBeNull();
   });
 
+  it('上下文增长趋势固定为折线：无图表模式切换、无面积填充', async () => {
+    const container = await render();
+    const svg = container.querySelector('svg[data-chart="growth"]') as SVGSVGElement;
+
+    expect(container.querySelector('[aria-label="图表模式"]')).toBeNull();
+    expect(svg.querySelector('path[fill="none"]')).toBeTruthy();
+    expect(svg.querySelector('defs linearGradient')).toBeNull();
+  });
+
   it('详情弹窗趋势小图（逐轮轴）：主曲线 + 缓存读份额带 + /compact 标记 + 轮号刻度', async () => {
     const container = await render();
 
@@ -253,9 +262,9 @@ describe('ContextTracker run 泛化（泳道视角：session 即 agent）', () =
     const compactChip = document.querySelector('[data-agent-event="compact"]');
     expect(compactChip).toBeTruthy();
     expect(compactChip!.textContent).toContain('↓-67%');
-    // 弹窗档案：身份行 root 徽标 + 关键四数骨架（峰值/窗口水位/增速/缓存命中）
+    // 弹窗档案：身份行 主Agent 徽标 + 关键四数骨架（峰值/窗口水位/增速/缓存命中）
     const detailText = text(document.querySelector('[data-agent-detail]')!);
-    expect(detailText).toContain('root');
+    expect(detailText).toContain('主Agent');
     expect(detailText).toContain('峰值');
     expect(detailText).toContain('窗口水位');
     expect(detailText).toContain('增速');
@@ -265,17 +274,13 @@ describe('ContextTracker run 泛化（泳道视角：session 即 agent）', () =
   it('增长曲线从 0 生长（初始锚点）：主图与趋势小图首点落基线，随后升到首测量值', async () => {
     const container = await render();
 
-    // 主图：线路径首点 y = 基线（与面积闭合 L 段的 y 同源）——初始轮此前
-    // 被统计过滤（totalTokens<=0），曲线一律从首测量值起步；锚只进绘制
-    // 序列不进命中点，悬浮仍只对真实轮次
+    // 主图：折线首点 y = 基线——初始轮此前被统计过滤（totalTokens<=0），
+    // 曲线一律从首测量值起步；锚只进绘制序列不进命中点，悬浮仍只对真实轮次
     const svg = container.querySelector('svg[data-chart="growth"]') as SVGSVGElement;
     const linePath = svg.querySelector('path[fill="none"]') as SVGPathElement;
-    const areaPath = svg.querySelector('path.ctx-area-in') as SVGPathElement;
     expect(linePath).toBeTruthy();
-    expect(areaPath).toBeTruthy();
-    const baselineY = Number((areaPath.getAttribute('d') ?? '').match(/L [\d.]+,([\d.]+) Z$/)?.[1]);
+    const baselineY = Number(svg.getAttribute('height')) - 40;
     const firstY = Number((linePath.getAttribute('d') ?? '').match(/^M [\d.]+,([\d.]+)/)?.[1]);
-    expect(Number.isFinite(baselineY)).toBe(true);
     expect(firstY).toBe(baselineY);
 
     // 趋势小图：首点 M 46,200（x=TREND_PAD_L=46，y=0 即基线 200）；成员A
@@ -310,10 +315,10 @@ describe('ContextTracker run 泛化（泳道视角：session 即 agent）', () =
 
     // 主图：初始锚在初始轮时刻（≠首数据轮时刻）——首点落基线，随后是真实
     // 曲线段（C，非零宽 L 直跳）
-    const linePath = birthContainer.querySelector('svg[data-chart="growth"] path[fill="none"]') as SVGPathElement;
-    const areaPath = birthContainer.querySelector('path.ctx-area-in') as SVGPathElement;
+    const growthSvg = birthContainer.querySelector('svg[data-chart="growth"]') as SVGSVGElement;
+    const linePath = growthSvg.querySelector('path[fill="none"]') as SVGPathElement;
     const lineD = linePath.getAttribute('d') ?? '';
-    const baselineY = Number((areaPath.getAttribute('d') ?? '').match(/L [\d.]+,([\d.]+) Z$/)?.[1]);
+    const baselineY = Number(growthSvg.getAttribute('height')) - 40;
     expect(Number(lineD.match(/^M [\d.]+,([\d.]+)/)?.[1])).toBe(baselineY);
     expect(/^M [\d.]+,[\d.]+ C /.test(lineD)).toBe(true);
 
@@ -365,7 +370,7 @@ describe('ContextTracker run 泛化（泳道视角：session 即 agent）', () =
     expect(onNav).toHaveBeenCalledWith('w-0', null);
   });
 
-  it('图例按类型分组（root 一键 + 类型条目 ×N），类型整组显隐联动 + 仅 Root 快捷', async () => {
+  it('图例按类型分组（root 一键 + 类型条目 ×N），类型整组显隐联动 + 主Agent 快捷', async () => {
     const container = await render();
 
     // 分组图例：root 按成员会话（成员短名）、子代理按类型聚合（×N 计数）——
@@ -383,8 +388,8 @@ describe('ContextTracker run 泛化（泳道视角：session 即 agent）', () =
     await act(async () => { (chips[2]!.querySelector('input') as HTMLElement).click() });
     expect(circles()).toBe(3);
 
-    // 仅 Root 快捷开关（画布内玻璃分段控件）：子代理整层收起
-    const onlyRoot = Array.from(container.querySelectorAll('[data-quick-filter] button')).find(b => b.textContent?.includes('仅 Root'));
+    // 主Agent 快捷开关（画布内玻璃分段控件）：子代理整层收起
+    const onlyRoot = Array.from(container.querySelectorAll('[data-quick-filter] button')).find(b => b.textContent === '主Agent');
     expect(onlyRoot).toBeTruthy();
     await act(async () => { (onlyRoot as HTMLElement).click() });
     expect(circles()).toBe(0);
@@ -500,7 +505,7 @@ describe('ContextTracker run 泛化（泳道视角：session 即 agent）', () =
     expect(statsText).toContain('增速');
     expect(statsText).toContain('缓存命中');
     expect(dialog!.textContent).toContain('成员B');
-    expect(dialog!.textContent).toContain('root');
+    expect(dialog!.textContent).toContain('主Agent');
     // 缓存效率卡：峰值轮构成 + 命中/节省/无缓存倍数
     const cacheText = dialog!.querySelector('[data-cache-card]')!.textContent ?? '';
     expect(cacheText).toContain('缓存读');

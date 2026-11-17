@@ -15,7 +15,7 @@
 // 评分卡内容不再自套滚动）；onJumpToTurn：评分证据 §N → DB turnIndex（1-based）
 // → turnId 深链 Turns tab（映射走 turn-digest 轻摘要——只要 turnIndex→turnId，
 // 不要 member-turns 全量轮次在大会话上的秒级卡顿）。
-// 板块内导出评分 JSON（RSI 自循环演进语料）：动作住在数据所在
+// 板块内导出评分 JSON（issue #116，RSI 自循环演进语料）：动作住在数据所在
 // 处——全员评分卡 + 维度定义快照，页面按钮与 score-export 端点同款载荷
 // （离线 bundle 档案同 URL 应答，离线同样可导）。
 

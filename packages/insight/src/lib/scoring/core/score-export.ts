@@ -6,7 +6,7 @@
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
-// Score 评测数据导出（数据用于自循环演进 RSI）：单一 JSON 文件，
+// Score 评测数据导出（issue #116：数据用于自循环演进 RSI）：单一 JSON 文件，
 // 三层可回溯——
 // ① 分数层：每成员完整评分卡（workflow-scorecard@2 原样内嵌不重造——分
 //   数/判定/原始值/证据 turnIndex 都在卡里）；
