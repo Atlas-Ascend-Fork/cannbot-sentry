@@ -1,5 +1,5 @@
 // Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
-// This program is free software: you can redistribute it and/or modify it under the terms and conditions of
+// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
 // CANN Open Software License Agreement Version 2.0 (the "License").
 // Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
@@ -17,6 +17,7 @@ import type { ScoreItemSchema } from '../core/schema';
 import type { SubItemResult } from '../core/types';
 import { commandOf, findLastVerifiedRun, lastWriteSeq } from '../core/test-parser';
 import { extractFilePath } from '@/lib/file-restore';
+import { isWriteFamilyTool } from '@/lib/tool-conventions';
 
 export interface RuleSpec {
   signal: string;              // 信号 key（SIGNALS 注册表）
@@ -39,7 +40,6 @@ export interface SignalDef {
   measure: (input: AssembledInput, re: RegExp | null) => SignalResult;
 }
 
-const WRITE_FAMILIES = new Set(['write', 'edit', 'edit1', 'multiedit']);
 const READ_FAMILIES = new Set(['read', 'readfile', 'cat', 'grep', 'glob']);
 
 function hitEvidence(tcs: ScoreToolCall[], cap = 5): SubItemResult['evidence'] {
@@ -72,7 +72,7 @@ export const SIGNALS: Record<string, SignalDef> = {
     filterHint: '路径正则，如 ^(docs|README)',
     measure: (input, re) => {
       const hits = input.toolCalls.filter(tc => {
-        if (!WRITE_FAMILIES.has(tc.toolName.toLowerCase())) return false;
+        if (!isWriteFamilyTool(tc.toolName)) return false;
         const p = extractFilePath(tc.argsJson);
         return p != null && (!re || re.test(p));
       });
@@ -111,7 +111,7 @@ export const SIGNALS: Record<string, SignalDef> = {
     label: '验证通过数（最后一次白名单验证运行）',
     filterHint: '不适用过滤（自动识别验证命令）',
     measure: (input) => {
-      const since = lastWriteSeq(input.toolCalls, tc => WRITE_FAMILIES.has(tc.toolName.toLowerCase()) && extractFilePath(tc.argsJson) != null);
+      const since = lastWriteSeq(input.toolCalls, tc => isWriteFamilyTool(tc.toolName) && extractFilePath(tc.argsJson) != null);
       const last = findLastVerifiedRun(input.toolCalls, { sinceSeq: since });
       if (!last?.summary) return { value: null, evidence: [], hitLabel: '无白名单验证运行' };
       return { value: last.summary.passed, evidence: [ev(last.call.turnIndex, `验证命令（${last.summary.framework}）`)], hitLabel: `最后一次验证通过 ${last.summary.passed} 条` };
@@ -121,7 +121,7 @@ export const SIGNALS: Record<string, SignalDef> = {
     label: '验证失败数（最后一次白名单验证运行）',
     filterHint: '不适用过滤（自动识别验证命令）',
     measure: (input) => {
-      const since = lastWriteSeq(input.toolCalls, tc => WRITE_FAMILIES.has(tc.toolName.toLowerCase()) && extractFilePath(tc.argsJson) != null);
+      const since = lastWriteSeq(input.toolCalls, tc => isWriteFamilyTool(tc.toolName) && extractFilePath(tc.argsJson) != null);
       const last = findLastVerifiedRun(input.toolCalls, { sinceSeq: since });
       if (!last?.summary) return { value: null, evidence: [], hitLabel: '无白名单验证运行' };
       return { value: last.summary.failed, evidence: [ev(last.call.turnIndex, `验证命令（${last.summary.framework}）`)], hitLabel: `最后一次验证失败 ${last.summary.failed} 条` };

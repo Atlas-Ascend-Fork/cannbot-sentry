@@ -1,9 +1,9 @@
 // Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
 // This program is free software, you can redistribute it and/or modify it under the terms and conditions of
 // CANN Open Software License Agreement Version 2.0 (the "License").
-// You may refer to the License for details on how you could use this file except in compliance with the License.
+// Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
-// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
 // ── 框架工具调用约定（单一事实源）────────────────────────────────
@@ -234,10 +234,22 @@ export function isShellToolCall(toolName: string): boolean {
   return SHELL_TOOL_EXACT.has(toolName.toLowerCase());
 }
 
+/** 写工具族词表（单一真理源）——claude/opencode 的 Write/Edit 家族 +
+ *  codex 的 apply_patch（argsJson 是裸 patch 文本，路径提取须走
+ *  apply-patch 解析器，见 extractFilePath 的 patch 回退）。 */
+export const WRITE_TOOL_NAMES: readonly string[] = ['write', 'edit', 'edit1', 'multiedit', 'apply_patch'];
+
+const WRITE_TOOL_EXACT = new Set(WRITE_TOOL_NAMES);
+
+/** 写工具族判定（大小写不敏感）——评分/自清理/改代码判定/测试识别等全部消费方统一走这里 */
+export function isWriteFamilyTool(toolName: string): boolean {
+  return WRITE_TOOL_EXACT.has(toolName.toLowerCase());
+}
+
 /**
- * shell 命令的连接文本（供文本扫描）：`{"command": string}` 直取；数组
- * 形态 join ' '。无 command 键（如 exec 的 input 形态）→ null，调用方
- * 自行回落原始 args。
+ * shell 命令的连接文本（供文本扫描）：`command` / Codex 原生 `cmd`
+ * 字符串直取；数组形态 join ' '。无命令键（如 exec 的 input 形态）→ null，
+ * 调用方自行回落原始 args。
  */
 export function shellCommandOf(argsJson: string | null): string | null {
   const parts = shellCommandArgsOf(argsJson);
@@ -247,16 +259,20 @@ export function shellCommandOf(argsJson: string | null): string | null {
 /**
  * shell 命令的参数段（供逐段文件读提取）：字符串命令 → [整串]；数组
  * 命令 → 各元素（`["bash","-lc","cat a"]` 的载荷在末元素——逐元素尝试
- * 避免连接后头部变 bash 导致漏提取）。无 command 键 → []。
+ * 避免连接后头部变 bash 导致漏提取）。command / cmd 双键兼容
+ * （opencode 与 Codex 原生）。无命令键 → []。
  */
 export function shellCommandArgsOf(argsJson: string | null): string[] {
   if (!argsJson) return [];
   try {
     const parsed: unknown = JSON.parse(argsJson);
     if (typeof parsed !== 'object' || parsed === null) return [];
-    const c = (parsed as Record<string, unknown>).command;
-    if (typeof c === 'string') return [c];
-    if (Array.isArray(c) && c.length > 0 && c.every(x => typeof x === 'string')) return c as string[];
+    const args = parsed as Record<string, unknown>;
+    for (const key of ['command', 'cmd']) {
+      const c = args[key];
+      if (typeof c === 'string' && c) return [c];
+      if (Array.isArray(c) && c.length > 0 && c.every(x => typeof x === 'string')) return c as string[];
+    }
   } catch {
     // 非 JSON
   }
@@ -278,26 +294,37 @@ export function shellCommandArgsOf(argsJson: string | null): string[] {
 /** shell 读类命令白名单（分段后的首 token，小写归一） */
 const SKILL_MD_READ_COMMANDS = new Set(['cat', 'sed', 'head', 'tail', 'less', 'more', 'nl']);
 
-/** 读类命令的连接文本：codex `cmd` 键 → claude/opencode `command` 键（有序，数组形态拼合） */
+/** 读类命令的连接文本：复用 shell 命令参数单点，保持键优先级一致 */
 export function shellReadCommandOf(argsJson: string | null): string | null {
-  if (!argsJson) return null;
-  let parsed: unknown;
+  const parts = shellCommandArgsOf(argsJson);
+  return parts.length > 0 ? parts.join(' ') : null;
+}
+
+/** codex exec 工具的 input 形态内嵌 `exec_command({cmd:"…"})` 的命令文本提取
+ *  （与分析层 extractExecFileReads / 归因层 restoreShellReads 同源正则，单点）。
+ *  无 input / 无匹配 → []。 */
+export function shellExecInputCommandsOf(argsJson: string | null): string[] {
+  if (!argsJson) return [];
+  let input = '';
   try {
-    parsed = JSON.parse(argsJson);
+    const a = JSON.parse(argsJson) as { input?: unknown };
+    if (typeof a.input === 'string') input = a.input;
   } catch {
-    return null;
+    return [];
   }
-  if (typeof parsed !== 'object' || parsed === null) return null;
-  const args = parsed as Record<string, unknown>;
-  for (const key of ['cmd', 'command']) {
-    const v = args[key];
-    if (typeof v === 'string' && v) return v;
-    if (Array.isArray(v)) {
-      const joined = v.filter(s => typeof s === 'string').join(' ');
-      if (joined) return joined;
-    }
+  const cmds: string[] = [];
+  for (const m of input.matchAll(/exec_command\(\{cmd:"((?:[^"\\]|\\.)*)"/g)) {
+    cmds.push(m[1].replace(/\\"/g, '"').replace(/\\n/g, '\n').replace(/\\\\/g, '\\'));
   }
-  return null;
+  return cmds;
+}
+
+/** shell 工具调用的命令文本序列（检测面源域）：command/cmd 键（join ' '，保持
+ *  detectSkillMdReads 的数组形态语义）+ codex input 内嵌 exec_command 逐条。
+ *  无任何命令文本 → []。 */
+export function shellCommandTextsOf(argsJson: string | null): string[] {
+  const cmd = shellReadCommandOf(argsJson);
+  return cmd ? [cmd, ...shellExecInputCommandsOf(argsJson)] : shellExecInputCommandsOf(argsJson);
 }
 
 /** SKILL.md 路径 → 技能名（父目录名；无父目录回落空） */
@@ -372,6 +399,22 @@ export function detectSkillMdReads(cmd: string): SkillMdRead[] {
       if (!skillName || seen.has(filePath)) continue;
       seen.add(filePath);
       out.push({ skillName, filePath });
+    }
+  }
+  return out;
+}
+
+/** 一次 shell 工具调用 → SKILL.md 读取信号：command/cmd 键与 codex input 内嵌
+ *  exec_command 两形态同源检测、按路径去重合并——检测面与归因面
+ *  （restoreShellReads 的 commandTextsOf）对齐，input 形态读 SKILL.md 不再漏检。 */
+export function detectSkillMdReadsOfShell(argsJson: string | null): SkillMdRead[] {
+  const out: SkillMdRead[] = [];
+  const seen = new Set<string>();
+  for (const text of shellCommandTextsOf(argsJson)) {
+    for (const read of detectSkillMdReads(text)) {
+      if (seen.has(read.filePath)) continue;
+      seen.add(read.filePath);
+      out.push(read);
     }
   }
   return out;
