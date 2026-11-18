@@ -15,7 +15,7 @@
 //   ④ 产物文件数哨兵（300-550）；CLI bundle 实跑 --version 与展示版本一致
 //
 // 注：不校验 package-lock.json——它被 .gitignore 忽略不入库（各机器本地生成），
-// 版本升级后重装前必"漂移"，属环境过期而非代码错误 ；且 pack/publish
+// 版本升级后重装前必"漂移"，属环境过期而非代码错误（issue #5）；且 pack/publish
 // 均不读 lockfile，对发布物零影响。
 
 import { describe, it, expect } from "vitest"

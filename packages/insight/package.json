@@ -1,6 +1,6 @@
 {
   "name": "context-insight",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Session-level observability tool for LLM coding agents (opencode/Claude Code)",
   "license": "SEE LICENSE IN LICENSE",
   "type": "module",
@@ -13,6 +13,8 @@
   },
   "scripts": {
     "dev": "next dev -H 127.0.0.1",
+    "prebuild": "node scripts/build-guard.mjs",
+
     "build": "next build",
     "build:export-view": "node scripts/build-export-view.mjs",
     "start": "next start -H 127.0.0.1",

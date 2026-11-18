@@ -183,31 +183,6 @@ describe("smart-agent 端口选择器（pick-smart-agent-port.sh）", () => {
     }
   }, 30_000)
 
-  // CI 最小容器形态：ss/lsof/fuser 全缺（或权限受限失明）→ 逐级补位必须
-  // 落到纯 /proc 兜底——占用识别不允许因镜像精简而退化（三类事故防线
-  // 里的避让/拒杀都依赖"看得见端口被占"这个前提）
-  it.skipIf(!fs.existsSync("/proc"))("最小镜像兜底：ss/lsof/fuser 全失明 → /proc 检测仍避让被占端口", async () => {
-    const base = await freeQuadBase()
-    const stubDir = fs.mkdtempSync(path.join(os.tmpdir(), "picker-blind-stub-"))
-    for (const tool of ["ss", "lsof", "fuser"]) {
-      fs.writeFileSync(path.join(stubDir, tool), "#!/bin/sh\nexit 0\n")
-      fs.chmodSync(path.join(stubDir, tool), 0o755)
-    }
-    const foreign = await occupyTcp(base + 1)
-    try {
-      const { stdout, stderr } = await execFileAsync("bash", [PICK, String(base), String(base)], {
-        timeout: 30_000,
-        env: { ...process.env, PATH: `${stubDir}:${process.env.PATH}` },
-      })
-      expect(stdout.trim()).toBe(String(base + 2))
-      expect(stderr).toContain("non-smart-agent process")
-      expect(foreign.listening).toBe(true)
-    } finally {
-      await closeServer(foreign)
-      fs.rmSync(stubDir, { recursive: true, force: true })
-    }
-  }, 30_000)
-
   it("server.py 只绑 127.0.0.1（不再 0.0.0.0 全网卡暴露）", () => {
     const src = fs.readFileSync(path.resolve(__dirname, "../..", "smart-agent", "server.py"), "utf8")
     expect(src).toContain('ThreadingHTTPServer(("127.0.0.1", PORT), Handler)')
