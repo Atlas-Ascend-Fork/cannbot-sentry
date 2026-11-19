@@ -3,7 +3,7 @@
 // CANN Open Software License Agreement Version 2.0 (the "License").
 // Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
-// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
 // skill-invocations 模块单测：B 形技能加载信号（读文件即技能）的 wire 形状
@@ -160,6 +160,18 @@ describe('detectSkillInvocations — shell 读类命令通道', () => {
       tc('write_stdin', { session_id: 57353, yield_time_ms: 30000, max_output_to_read: 8192 }),
       tc('apply_patch', { input: '*** Begin Patch\n' }),
     ])).toHaveLength(0);
+  });
+
+  it('exec 的 input 内嵌 exec_command({cmd:"cat …/SKILL.md"}) → 技能信号（检测面与归因面同源）', () => {
+    const out = detectSkillInvocations([
+      tc('exec', { input: 'exec_command({cmd:"cat /s/data-analysis/SKILL.md"})' }, 'call_in'),
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0]).toEqual({
+      skillName: 'data-analysis',
+      filePath: '/s/data-analysis/SKILL.md',
+      sourceToolCallId: 'call_in',
+    });
   });
 
   it('引号包裹的路径剥离后识别', () => {

@@ -3,7 +3,7 @@
 // CANN Open Software License Agreement Version 2.0 (the "License").
 // Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
-// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
 // 技能加载信号（B 形：读文件即技能）的 wire 双形状（真机核实）：
@@ -22,9 +22,8 @@
 import type { ToolCallInfo } from '../shared/types';
 import {
   parseReadToolArgs,
-  detectSkillMdReads,
+  detectSkillMdReadsOfShell,
   isShellToolCall,
-  shellReadCommandOf,
   skillNameOfSkillMdPath,
 } from '../tool-conventions';
 
@@ -54,9 +53,7 @@ export function detectSkillInvocations(toolCalls: ToolCallInfo[]): SkillInvocati
         out.push({ skillName, filePath, sourceToolCallId: tc.toolCallId });
       }
     } else if (isShellToolCall(lower)) {
-      const cmd = shellReadCommandOf(tc.argsJson);
-      if (!cmd) continue;
-      for (const read of detectSkillMdReads(cmd)) {
+      for (const read of detectSkillMdReadsOfShell(tc.argsJson)) {
         out.push({ skillName: read.skillName, filePath: read.filePath, sourceToolCallId: tc.toolCallId });
       }
     }
