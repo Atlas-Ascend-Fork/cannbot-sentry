@@ -1,6 +1,9 @@
 # Changelog
 
-## [Unreleased]
+## [v0.1.16] - 2026-11-17
+
+### Changed
+- 【仓间零依赖收口】vitest 收编为本包 devDependency（此前未声明，运行时借同仓 insight 包的二进制、缺失时替其 npm install——两包工具面耦合）：`resolve_vitest` 去掉 `../insight` / `../context-insight` 双名探测与替装自愈，vitest 缺失一律本包 `npm install`；bootstrap 回归锁重写为双锁——行为锁（无相邻包布局下自愈闭环 exit 0 + npm 落点断言）与静态哨兵（脚本文本零借用路径 + package.json 必须声明 vitest，防回潮）。fresh clone 单仓 `npm install && npm test` 即可全量跑通，不要求 insight 并排 checkout
 
 ### Fixed（近期主线修复补记）
 - 【密钥清洗】`redactor` 补齐 `Authorization: Token/Bearer/Basic` 头回显（含大小写变体与短凭据）与裸 `api_key`/`API-KEY` 配置字段回显的打码；普通英文短语（"Token usage increased" 等）不误伤（`8f623e8`）

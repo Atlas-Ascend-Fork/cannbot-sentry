@@ -99,6 +99,20 @@ export function isSkillInjectionText(text: string): boolean {
     text.startsWith('Launching skill ');
 }
 
+/** skill 注入文本 → 技能名（斜杠命令注入轮恢复通道的名字提取）：
+ *  「Base directory for this skill: <dir>」取 /skills/ 段（与 turn-split
+ *  slashSkillInvocation 同口径）；其余注入形态（<skill-format> /
+ *  Launching skill）无现场数据、前言不可剥——不产出正文（宁缺毋假），
+ *  待现场样本补齐再扩。 */
+export function skillNameOfInjectionText(text: string): string | null {
+  const m = text.match(/Base directory for this skill:\s*(\S+)/);
+  if (!m) return null;
+  const bySkills = m[1].match(/\/skills\/([^/\s<]+)/);
+  if (bySkills) return bySkills[1];
+  const segs = m[1].replace(/\/+$/, '').split('/').filter(Boolean);
+  return segs.length > 0 ? segs[segs.length - 1] : null;
+}
+
 /** opencode 子代理回传 / claude 后台任务完成通知指纹（读侧单源）：异步派发
  *  完成时两家都以 user 行推回主会话——opencode 是 `<subagent sessionID="…"
  *  state="…">` 壳；claude code 是 `<task-notification>` 壳（Agent 工具的
@@ -480,6 +494,50 @@ export function writeStdinCharsOf(argsJson: string | null): string | null {
   } catch {
     return null;
   }
+}
+
+// ── codex exec_command 派生失败形态（传输层错误，命令从未成形执行、无退出码）──
+// 现场形态（01a1e584 会话实测，8+2 例）：
+//   `exec_command failed: CreateProcess { message: "Rejected(\"… rejected: <理由>\")" }`
+//     sandbox 静态分析拒绝派生（rm -f 危险命令样式等）——命令未执行
+//   `failed to parse function arguments: EOF while parsing a string at …`
+//     模型输出的工具参数 JSON 截断/畸形——调用未成形
+// 本模块只回答「什么失败形态 + 证据文本」（框架协议事实）；形态 → 中性错误
+// 分类学的映射归 tool-call-errors 单点（与 codexChunkExitCodeOf 的分工同理：
+// 形态识别在词表层，语义解释在错误语义层）。
+
+export type CodexExecFailureForm = 'spawn_rejected' | 'spawn_failed' | 'bad_args';
+
+export interface CodexExecFailureEvidence {
+  form: CodexExecFailureForm;
+  evidence: string;
+}
+
+function truncateEvidence(text: string, max: number): string {
+  return text.length <= max ? text : `${text.slice(0, max)}…`;
+}
+
+function firstLineOf(raw: string, max: number): string {
+  const line = raw.split('\n', 1)[0] ?? raw;
+  return truncateEvidence(line, max);
+}
+
+export function codexExecFailureEvidenceOf(raw: string): CodexExecFailureEvidence | null {
+  if (raw.startsWith('failed to parse function arguments')) {
+    return { form: 'bad_args', evidence: firstLineOf(raw, 200) };
+  }
+  if (raw.startsWith('exec_command failed:')) {
+    // Rejected 里的拒绝理由是信息量最高的证据（危险命令样式/策略名），比整段
+    // Rust 错误结构体可读；无 Rejected（其他 CreateProcess 失败形态）→ 首行。
+    // 尾部转义残留（内嵌引号的反斜杠）与空白一并裁净
+    const m = raw.match(/rejected:\s*([^"]+)/i);
+    if (m != null) {
+      const reason = m[1].replace(/[\s\\]+$/, '');
+      return { form: 'spawn_rejected', evidence: truncateEvidence(`sandbox rejected: ${reason}`, 200) };
+    }
+    return { form: 'spawn_failed', evidence: firstLineOf(raw, 200) };
+  }
+  return null;
 }
 
 /** 剥模型自印的 SKILL.md 分隔横幅（`echo '======== <skill>/SKILL.md ========'; cat …`

@@ -1,15 +1,16 @@
 // Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
 // This program is free software, you can redistribute it and/or modify it under the terms and conditions of
-// CANN Open Software License Agreement Version 2.0 (the "License).
-// Please refer to the License for details. You should not use this file except in compliance with the License.
+// CANN Open Software License Agreement Version 2.0 (the "License").
+// Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
-// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE.
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
 // tests 分层（与 insight 同构）：ut/ 默认跑（run-tests.sh / npm test）；
 // e2e/（真 wrapper + mock insight + 浏览器副作用）显式跑：npm run test:e2e。
-// 不 import 'vitest/config'：cpx 的 vitest 借自 insight（bin 直调），本包
-// node_modules 解析不到该包，config 用纯对象导出即可。
+// 不 import 'vitest/config'：vitest 由 CLI 直接读取本文件，纯对象导出即可
+// （历史上 vitest 借自相邻包 insight 时本包解析不到类型包；现为自有
+// devDependency，保持纯对象零额外解析依赖）。
 
 export default {
   test: {
@@ -21,8 +22,8 @@ export default {
     testTimeout: 60_000,
     // COVERAGE=1（run-tests.sh → --coverage）：v8 provider 统计 src/ 全量；
     // 终端只打 text-summary 摘要，逐文件明细看 lcov/html；
-    // provider 包 @vitest/coverage-v8 是本包 devDependency（vitest 二进制借
-    // insight 的，但 provider 模块从本包目录解析，须本包自带）
+    // provider 包 @vitest/coverage-v8 与 vitest 均为本包 devDependency
+    // （provider 模块从本包目录解析，须本包自带）
     coverage: {
       provider: 'v8',
       include: ['src/**'],

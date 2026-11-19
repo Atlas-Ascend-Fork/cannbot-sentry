@@ -6,18 +6,17 @@
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
-// run-tests.sh 自愈安装目标的回归锁。历史 bug：resolve_vitest 探测已支持
-// ../context-insight 第二候选（insight 产品部署目录名），但 vitest 缺失时的
-// 自愈安装 fallback 仍硬编码 `(cd ../insight && npm install)`——当 insight 仅以
-// 部署目录名 context-insight 与 cpx 并排（无 insight 目录）时 `cd ../insight`
-// 目录不存在 → `|| exit 1` 直接退出，自愈路径失效（对应 cpx 与 insight 产品
-// 部署目录并排部署的形态）。
+// run-tests.sh vitest 自举的回归锁。历史：cpx 曾未声明 vitest 依赖，运行时借
+// 相邻包 insight（../insight | ../context-insight 双名探测）的二进制，缺失时
+// 替其 npm install——两仓存在工具面耦合。0.1.15 起 vitest 收编为本包
+// devDependency，仓间零依赖。
 //
-// 锁法：把真 run-tests.sh 拷进受控沙箱布局（insight 仅以部署目录名
-// context-insight 在场），用
-// 假 npm/vitest 桩跑一遍真实自愈流程，断言 npm 被调用的目录是 context-insight
-// 而非硬编码的 insight，且自愈闭环走通（exit 0）。旧实现（硬编码 ../insight）
-// 在 `cd` 失败处即退出，npm 一次都不触发 → 断言必红。
+// 锁两件事：
+//   1) 行为锁：全新 cpx checkout（vitest 缺失、且**没有任何相邻包**）跑
+//      run-tests.sh，自愈 = 本包 npm install，闭环走通（exit 0）——相邻包
+//      缺席不再是测试入口的运行前提
+//   2) 静态锁：脚本文本不得再出现相邻包借用路径（../insight、
+//      ../context-insight）——防「探测/安装回潮」的漂移哨兵
 import { describe, it, expect, afterAll } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -27,7 +26,6 @@ import { spawnSync } from 'node:child_process';
 const ROOT = path.resolve(__dirname, '../../');
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cpx-bootstrap-'));
 const cpxRoot = path.join(tmpRoot, 'cpx');
-const insightRoot = path.join(tmpRoot, 'context-insight');
 const binDir = path.join(tmpRoot, 'bin');
 const npmLog = path.join(tmpRoot, 'npm.log');
 
@@ -39,11 +37,11 @@ function writeExecutable(p: string, body: string): void {
   fs.chmodSync(p, 0o755);
 }
 
-describe('run-tests.sh 自愈安装目标跟随双名探测', () => {
-  it('insight 仅以部署目录名 context-insight 在场时，vitest 缺失自愈应装进 context-insight（而非硬编码 ../insight）', () => {
-    // cpx 侧：拷贝真 run-tests.sh + package.json，假 node_modules 令 cpx 自身
-    // deps 检查通过（跳过 cpx 的 npm install），把唯一一次 npm install
-    // 留给 insight 侧自愈。
+describe('run-tests.sh vitest 自举（自有依赖，仓间零依赖）', () => {
+  it('vitest 缺失且无相邻包：自愈 = 本包 npm install，闭环走通', () => {
+    // cpx repo：拷贝真 run-tests.sh + package.json，假 node_modules 令 cpx 自身
+    // dependencies 检查通过（跳过生产依赖安装），把唯一一次 npm install 留给
+    // vitest 自愈——与 fresh clone 后首次跑测试的真实形态一致。
     fs.mkdirSync(path.join(cpxRoot, 'scripts'), { recursive: true });
     fs.copyFileSync(path.join(ROOT, 'scripts/run-tests.sh'), path.join(cpxRoot, 'scripts/run-tests.sh'));
     const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
@@ -53,9 +51,8 @@ describe('run-tests.sh 自愈安装目标跟随双名探测', () => {
     }
     writeExecutable(path.join(cpxRoot, 'node_modules', '.bin', 'tsx'), '#!/usr/bin/env bash\nexit 0\n');
 
-    // insight 包：仅以产品部署目录名 context-insight 在场（无 insight 目录）。
-    fs.mkdirSync(insightRoot, { recursive: true });
-    fs.writeFileSync(path.join(insightRoot, 'package.json'), '{"name":"context-insight","private":true}\n');
+    // 关键布局：tmp 下只有 cpx，没有任何相邻包（insight/context-insight 都不在）
+    // ——旧实现（借相邻包二进制）在此必挂：探测全 miss → 找不到相邻包退出。
 
     // 假 npm：记录被调用的 PWD，并模拟安装成功（在 CWD 落一个可执行 vitest，
     // 好让 resolve_vitest 二次探测命中、自愈闭环走通到 exit 0）。
@@ -73,12 +70,21 @@ describe('run-tests.sh 自愈安装目标跟随双名探测', () => {
       timeout: 30_000,
     });
 
-    // 自愈闭环走通：没有在硬编码的 ../insight 上断掉
+    // 自愈闭环走通：没有相邻包也活着
     expect(r.status, `run-tests.sh 失败：\n${r.stdout}\n${r.stderr}`).toBe(0);
 
+    // npm 只被调用一次（生产依赖齐全被跳过），且落在 cpx 自己的目录
     const calls = fs.existsSync(npmLog) ? fs.readFileSync(npmLog, 'utf8').trim().split('\n') : [];
-    // npm 只该被调用一次（cpx 自身 deps 齐全被跳过），且落在 context-insight
     expect(calls).toHaveLength(1);
-    expect(calls[0]).toBe(insightRoot);
+    expect(calls[0]).toBe(cpxRoot);
+  });
+
+  it('静态哨兵：run-tests.sh 不得出现相邻包借用路径', () => {
+    const script = fs.readFileSync(path.join(ROOT, 'scripts/run-tests.sh'), 'utf8');
+    expect(script, '相邻包借用回潮（vitest 应为本包 devDependency）').not.toContain('../insight');
+    expect(script, '相邻包借用回潮（vitest 应为本包 devDependency）').not.toContain('../context-insight');
+    // 收编的根：package.json 必须声明 vitest（否则自愈安装装不出来）
+    const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
+    expect(pkg.devDependencies?.vitest, 'package.json 必须声明 vitest devDependency').toBeTruthy();
   });
 });
