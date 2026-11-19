@@ -1,9 +1,9 @@
 // Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
-// This program is free software: you can redistribute it and/or modify it under the terms and conditions of
+// This program is free software, you can redistribute it and/or modify it under the terms and conditions of
 // CANN Open Software License Agreement Version 2.0 (the "License").
-// Please refer to the License for details on how you could use this file except in compliance with the License.
+// Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
-// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
 import { describe, it, expect } from 'vitest';
@@ -16,6 +16,7 @@ import {
   normalizeToolResultPayload,
   unwrapSkillContent,
   SHELL_TOOL_NAMES,
+  SHELL_TOOL_DB_NAMES,
   isShellToolCall,
   shellCommandOf,
   shellCommandArgsOf,
@@ -198,6 +199,13 @@ describe('tool-conventions（框架工具调用约定）', () => {
       expect(isShellToolCall('read')).toBe(false);
       expect(isShellToolCall('write')).toBe(false);
       expect(isShellToolCall('task')).toBe(false);
+    });
+    it('SHELL_TOOL_DB_NAMES：DB 精确 in 预筛的两态并列（Claude Code PascalCase Bash 不漏）', () => {
+      expect(SHELL_TOOL_DB_NAMES).toEqual([
+        'bash', 'shell', 'exec', 'exec_command', 'Bash', 'Shell', 'Exec', 'Exec_command',
+      ]);
+      // 判定语义仍归 isShellToolCall（大小写归一），DB 词表仅为预筛不被误当判定源
+      for (const n of SHELL_TOOL_DB_NAMES) expect(isShellToolCall(n)).toBe(true);
     });
     it('shellCommandOf：字符串 command 直取（opencode bash/shell）', () => {
       expect(shellCommandOf('{"command":"cat a.txt && sed -n 5,9p b.txt"}')).toBe('cat a.txt && sed -n 5,9p b.txt');

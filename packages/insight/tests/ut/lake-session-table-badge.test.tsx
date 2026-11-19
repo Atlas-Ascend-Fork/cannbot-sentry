@@ -3,8 +3,12 @@
 // CANN Open Software License Agreement Version 2.0 (the "License").
 // Please refer to the License for details. You may not use this file except in compliance with the License.
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
-// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+// INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
+// @vitest-environment happy-dom
+// lake 会话表框架徽标回归锁：框架族全覆盖（claude/opencode/cannbot/codex/
+// dsh）。codex 曾漏分支——客户实测 codex 捕获上传 contextBay 成功，但数据
+// 源列表 type 列恒显「—」（识别不出来）。
 
 import { describe, it, expect } from 'vitest';
 import { renderToString } from 'react-dom/server';
@@ -51,7 +55,7 @@ describe('LakeSessionTable 框架徽标（type 列）', () => {
       session('codex', 'sid-codex'),
       session('dsh', 'sid-dsh'),
     ]);
-    expect(html).toContain('>Claude</span>');
+    expect(html).toContain('>Claude Code</span>');
     expect(html).toContain('>OpenCode</span>');
     expect(html).toContain('>CANNBot</span>');
     expect(html).toContain('>Codex</span>');
@@ -65,6 +69,12 @@ describe('LakeSessionTable 框架徽标（type 列）', () => {
     const typeCell = html.split('inline-flex items-center gap-0.5')[1]?.split('</td>')[0] ?? '';
     expect(typeCell).toContain('>Codex</span>');
     expect(typeCell).not.toContain('>—<');
+  });
+
+  it('-proxy 捕获行渲染框架徽标 + proxy 徽标（回归锁：裸等值全分支失配恒「—」）', () => {
+    const html = renderTableHtml([session('claude-code-proxy', 'sid-proxy')]);
+    expect(html).toContain('>Claude Code</span>');
+    expect(html).toContain('>proxy</span>');
   });
 
   it('未知框架仍回落「—」', () => {
