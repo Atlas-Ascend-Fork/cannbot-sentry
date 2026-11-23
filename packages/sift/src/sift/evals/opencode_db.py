@@ -10,7 +10,7 @@
 的手工三步(XDG_DATA_HOME 隔离 → ``opencode session list`` → ``opencode export`` 原文)
 包成函数,供 audit 命令编排。
 
-**不读 SQLite**:列 session 靠 ``opencode session list --format json``,导出靠
+**不解析 OpenCode 数据表或事件 schema**:列 session 靠 ``opencode session list --format json``,导出靠
 ``opencode export <id>``(默认原文;``--sanitize`` 可选,但脱敏后别喂 audit ——
 auditor 读 ``part.text`` 判遵循性);opencode schema 变是 opencode 的事,sift 不背
 SQLite 解析(与 b9ef5be「用真格式、不重造 export」决议一致)。
@@ -38,9 +38,10 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import sqlite3
 import subprocess
 import tempfile
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from pathlib import Path
 
 from sift.errors import OpencodeDbError
@@ -65,18 +66,32 @@ def run_opencode(xdg_dir: Path, args: list[str], timeout: int = 120) -> str:
             check=False,
         )
     except FileNotFoundError as exc:
-        raise OpencodeDbError("opencode CLI 未找到;--db 需先装 opencode 并确保在 PATH(https://opencode.ai)") from exc
+        raise OpencodeDbError(
+            "opencode CLI 未找到;--db 需先装 opencode 并确保在 PATH(https://opencode.ai)"
+        ) from exc
     except subprocess.TimeoutExpired as exc:
         raise OpencodeDbError(f"opencode {' '.join(args)} 超时({timeout}s)") from exc
     if proc.returncode != 0:
         detail = (proc.stderr or proc.stdout or "").strip()
-        raise OpencodeDbError(f"opencode {' '.join(args)} 失败(exit {proc.returncode}): {detail[:500]}")
+        raise OpencodeDbError(
+            f"opencode {' '.join(args)} 失败(exit {proc.returncode}): {detail[:500]}"
+        )
     return proc.stdout
+
+
+def _backup_opencode_db(source_uri: str, destination_path: Path) -> None:
+    """Create a consistent SQLite snapshot and normalize driver errors."""
+    try:
+        with closing(sqlite3.connect(source_uri, uri=True)) as source_db:
+            with closing(sqlite3.connect(destination_path)) as destination_db:
+                source_db.backup(destination_db)
+    except sqlite3.Error as exc:
+        raise OpencodeDbError(f"备份 opencode db 失败: {exc}") from exc
 
 
 @contextmanager
 def isolated_xdg_env(db_path: Path):
-    """搭隔离 XDG 环境:``mkdtemp`` → cp db_path 到 ``<tmp>/opencode/opencode.db`` → yield tmp。
+    """搭隔离 XDG 环境:``mkdtemp`` → 一致性 backup db_path 到 ``<tmp>/opencode/opencode.db`` → yield tmp。
 
     yield 的目录即作 ``XDG_DATA_HOME`` 和子进程 cwd(opencode 在此找到 db、且 cwd 非仓库
     保证 session list 列全)。退出 ``rmtree`` 清理。db 不存在 → ``OpencodeDbError``。
@@ -86,7 +101,9 @@ def isolated_xdg_env(db_path: Path):
     tmp = Path(tempfile.mkdtemp(prefix="sift-opencode-"))
     try:
         (tmp / "opencode").mkdir(parents=True)
-        shutil.copy2(db_path, tmp / "opencode" / "opencode.db")
+        destination_path = tmp / "opencode" / "opencode.db"
+        source_uri = db_path.resolve().as_uri() + "?mode=ro"
+        _backup_opencode_db(source_uri, destination_path)
         yield tmp
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
@@ -122,7 +139,9 @@ def list_sessions(db_path: Path) -> list[dict]:
     try:
         data = json.loads(stripped)
     except json.JSONDecodeError as exc:
-        raise OpencodeDbError(f"opencode session list 输出无法解析为 JSON: {stripped[:200]!r}") from exc
+        raise OpencodeDbError(
+            f"opencode session list 输出无法解析为 JSON: {stripped[:200]!r}"
+        ) from exc
     if not isinstance(data, list):
         raise OpencodeDbError(f"opencode session list 输出非数组: {str(data)[:200]}")
     return sorted(data, key=lambda s: s.get("updated", 0) or 0, reverse=True)
@@ -146,9 +165,13 @@ def export_session(db_path: Path, session_id: str, sanitize: bool = False) -> st
     try:
         data = json.loads(out)
     except json.JSONDecodeError as exc:
-        raise OpencodeDbError(f"opencode export 输出无法解析为 JSON(session={session_id}): {out[:200]!r}") from exc
+        raise OpencodeDbError(
+            f"opencode export 输出无法解析为 JSON(session={session_id}): {out[:200]!r}"
+        ) from exc
     if not (isinstance(data, dict) and "messages" in data):
-        raise OpencodeDbError(f"opencode export 输出非合法 session(缺 messages;session={session_id})")
+        raise OpencodeDbError(
+            f"opencode export 输出非合法 session(缺 messages;session={session_id})"
+        )
     return out
 
 

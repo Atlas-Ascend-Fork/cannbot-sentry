@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 import subprocess
 from pathlib import Path
 
@@ -89,12 +90,18 @@ def test_run_opencode_timeout_raises(monkeypatch, tmp_path):
 
 def test_isolated_xdg_env_copies_db_and_cleans_up(tmp_path):
     db = tmp_path / "handed.db"
-    db.write_bytes(b"SQLITE-CONTENT")
+    with sqlite3.connect(db) as connection:
+        connection.execute("CREATE TABLE sessions (id TEXT)")
+        connection.execute("INSERT INTO sessions VALUES (?)", ("ses_saved",))
 
     with ocdb.isolated_xdg_env(db) as xdg:
         copied = xdg / "opencode" / "opencode.db"
         assert copied.exists()
-        assert copied.read_bytes() == b"SQLITE-CONTENT"
+        with sqlite3.connect(copied) as connection:
+            assert connection.execute("SELECT id FROM sessions").fetchall() == [
+                ("ses_saved",)
+            ]
+            assert connection.execute("PRAGMA integrity_check").fetchone() == ("ok",)
         # 退出前目录还在
         assert xdg.exists()
 
@@ -128,9 +135,27 @@ def test_isolated_xdg_env_empty_yields_opencode_dir_and_cleans_up():
 
 _LIST_JSON = json.dumps(
     [
-        {"id": "ses_old", "title": "旧", "updated": 100, "created": 90, "projectId": "global"},
-        {"id": "ses_new", "title": "新", "updated": 200, "created": 190, "projectId": "global"},
-        {"id": "ses_mid", "title": "中", "updated": 150, "created": 140, "projectId": "global"},
+        {
+            "id": "ses_old",
+            "title": "旧",
+            "updated": 100,
+            "created": 90,
+            "projectId": "global",
+        },
+        {
+            "id": "ses_new",
+            "title": "新",
+            "updated": 200,
+            "created": 190,
+            "projectId": "global",
+        },
+        {
+            "id": "ses_mid",
+            "title": "中",
+            "updated": 150,
+            "created": 140,
+            "projectId": "global",
+        },
     ]
 )
 
@@ -170,7 +195,9 @@ def test_list_sessions_garbage_raises(monkeypatch, tmp_path):
     monkeypatch.setattr(
         ocdb.subprocess,
         "run",
-        lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, stdout="not json", stderr=""),
+        lambda cmd, **kw: subprocess.CompletedProcess(
+            cmd, 0, stdout="not json", stderr=""
+        ),
     )
     with pytest.raises(OpencodeDbError, match="解析"):
         ocdb.list_sessions(db)
@@ -223,7 +250,9 @@ def test_export_session_non_session_shape_raises(monkeypatch, tmp_path):
     monkeypatch.setattr(
         ocdb.subprocess,
         "run",
-        lambda cmd, **kw: subprocess.CompletedProcess(cmd, 0, stdout='{"not": "a session"}', stderr=""),
+        lambda cmd, **kw: subprocess.CompletedProcess(
+            cmd, 0, stdout='{"not": "a session"}', stderr=""
+        ),
     )
     with pytest.raises(OpencodeDbError, match="合法"):
         ocdb.export_session(db, "ses_x")
@@ -262,3 +291,19 @@ def test_resolve_session_multi_returns_none():
     """多 session + 未指定 → 返回 None(信号歧义,交给 CLI 列清单 + exit 2)。"""
     sessions = [_sess("ses_a"), _sess("ses_b"), _sess("ses_c")]
     assert ocdb.resolve_session(sessions, None) is None
+
+
+@pytest.mark.parametrize("source_kind", ["not-sqlite", "directory"])
+def test_isolated_xdg_wraps_real_sqlite_failures(tmp_path, source_kind):
+    source = tmp_path / "source.db"
+    if source_kind == "directory":
+        source.mkdir()
+    else:
+        source.write_bytes(b"synthetic non-SQLite fixture" * 4)
+
+    with pytest.raises(OpencodeDbError, match="备份 opencode db 失败") as raised:
+        with ocdb.isolated_xdg_env(source):
+            pytest.fail("invalid source must not yield an isolated database")
+
+    assert isinstance(raised.value.__cause__, sqlite3.Error)
+    assert raised.value.exit_code == 3
