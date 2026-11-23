@@ -29,7 +29,8 @@ class LLMCallConfig(NamedTuple):
     timeout: int = 120
     schema: dict | None = None
     max_turns: int | None = None
-    transport: str = "cc"
+    # None = 跟随 SIFT_LLM_TRANSPORT；未设置时保持 cc。
+    transport: str | None = None
     max_tokens: int | None = None
 
 
@@ -162,6 +163,17 @@ def resolve_http_model(model: str | None) -> str:
     return model[:i] if i != -1 else model
 
 
+def resolve_llm_transport(configured: str | None) -> str:
+    """显式 transport 优先；否则读取 SIFT_LLM_TRANSPORT，最终回退 cc。"""
+    transport = (configured or os.environ.get("SIFT_LLM_TRANSPORT") or "cc").strip().lower()
+    if transport not in {"cc", "http"}:
+        raise RuntimeError(
+            f"未知 LLM transport: {transport!r}；只支持 cc / http"
+            "（可通过 SIFT_LLM_TRANSPORT 设置）"
+        )
+    return transport
+
+
 def _pick_tool_items(obj: dict):
     """从响应 content 抠 tool_use.input 解包(forced tool_use 应恒有;缺失返 None)。"""
     for b in obj.get("content", []):
@@ -205,9 +217,7 @@ def call_http(prompt, config: LLMCallConfig, on_usage, on_progress=None, max_tok
     - ``on_usage``:回 ``{input_tokens, output_tokens, …, total_cost_usd:0}``(裸 API 不返
       cost,补 0 对齐 ``call_claude`` 的 payload 形状)。
     """
-    model = config.model
-    timeout = config.timeout
-    schema = config.schema
+    schema, generic_text_result = _http_forced_schema(config.schema)
     token = resolve_anthropic_setting("ANTHROPIC_AUTH_TOKEN")
     base = resolve_anthropic_setting("ANTHROPIC_BASE_URL")
     if not token or not base:
@@ -224,61 +234,119 @@ def call_http(prompt, config: LLMCallConfig, on_usage, on_progress=None, max_tok
         "User-Agent": "claude-code/2.1.220",
     }
     base = base.rstrip("/")
+    return _http_forced_result(
+        prompt=prompt,
+        model=config.model,
+        timeout=config.timeout,
+        schema=schema,
+        generic_text_result=generic_text_result,
+        base=base,
+        headers=headers,
+        on_usage=on_usage,
+        on_progress=on_progress,
+        max_tokens=max_tokens,
+    )
 
-    def _attempt(max_tokens: int) -> dict:
-        """单次 forced tool_use 调用;usage 即时回报、截断即时 warn(可观测)。
 
-        请求不带 thinking 字段(GLM 默认浅思考,最快;为何不带见 ``HTTP_RETRY_MAX_TOKENS``
-        上方的三态实测注释)。
-        """
-        body = {
-            "model": resolve_http_model(model),
-            "max_tokens": max_tokens,
-            "messages": [{"role": "user", "content": prompt}],
-            "tools": [
-                {
-                    "name": "emit",
-                    "description": "emit the JSON result",
-                    "input_schema": schema,
+def _http_forced_schema(schema: dict | None) -> tuple[dict, bool]:
+    """forced tool_use 要求 object schema；未提供时包通用 result 文本工具。
+
+    未提供 schema 的调用方（init/add/coverage）让模型把完整 JSON 文本放进
+    result；transport 层解包后仍返回原始 JSON 字符串。
+    """
+    generic_text_result = schema is None
+    if generic_text_result:
+        schema = {
+            "type": "object",
+            "properties": {
+                "result": {
+                    "type": "string",
+                    "description": "The complete JSON response requested by the prompt.",
                 }
-            ],
-            "tool_choice": {"type": "tool", "name": "emit"},
+            },
+            "required": ["result"],
+            "additionalProperties": False,
         }
-        req = urllib.request.Request(
-            base + "/v1/messages",
-            data=json.dumps(body).encode(),
-            headers=headers,
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as r:
-                obj = json.loads(r.read())
-        except urllib.error.HTTPError as e:
-            if e.code == 529:
-                raise HttpThrottled(f"裸 HTTP 529(后端过载/身份限流): {e.read().decode()[:200]}") from e
-            if e.code == 429:
-                raise HttpRateLimited(f"裸 HTTP 429(账户速率/并发限制): {e.read().decode()[:200]}") from e
-            raise RuntimeError(f"裸 HTTP {e.code}: {e.read().decode()[:500]}") from e
-        except OSError as e:
-            raise RuntimeError(f"裸 HTTP 传输失败: {e!r}") from e
-        # 先回 usage(无论成败,产出了 token 就该计;truncated 标记截断留存)。
-        truncated = obj.get("stop_reason") == "max_tokens"
-        if on_usage is not None:
-            usage = obj.get("usage")
-            if isinstance(usage, dict):
-                payload = dict(usage)
-                payload.setdefault("total_cost_usd", 0.0)
-                if truncated:
-                    payload["truncated"] = True
-                on_usage(payload)
-        # 截断(stop_reason=max_tokens):thinking 顶到上限 → tool_use 可能不完整(有但畸形/缺字段)。
-        # **有 tool_use 就用**(即使截断;下游 parser 判完整性,不完整则 parse_failed 重试),
-        # 不 cc 回退——曾用"截断就 cc 回退"但 GLM 频繁顶到 max_tokens 致大批请求走 cc(4-6× 慢)。
-        # warn 不在这里打(升档路上的中间截断由 on_progress 进度行叙事,再打 Python UserWarning
-        # 像出了 bug),只打在最终被消费的截断结果上(见 call_http 返回前);on_usage
-        # payload 带 truncated 留存(accumulator 按 _KEYS 取,不受影响)。
-        return obj
+    return schema, generic_text_result
 
+
+def _http_attempt(
+    prompt: str,
+    model: str | None,
+    schema: dict,
+    base: str,
+    headers: dict,
+    timeout: int,
+    max_tokens: int,
+    on_usage,
+) -> dict:
+    """单次 forced tool_use 调用;usage 即时回报、截断即时 warn(可观测)。
+
+    请求不带 thinking 字段(GLM 默认浅思考,最快;为何不带见 ``HTTP_RETRY_MAX_TOKENS``
+    上方的三态实测注释)。
+    """
+    body = {
+        "model": resolve_http_model(model),
+        "max_tokens": max_tokens,
+        "messages": [{"role": "user", "content": prompt}],
+        "tools": [
+            {
+                "name": "emit",
+                "description": "emit the JSON result",
+                "input_schema": schema,
+            }
+        ],
+        "tool_choice": {"type": "tool", "name": "emit"},
+    }
+    req = urllib.request.Request(
+        base + "/v1/messages",
+        data=json.dumps(body).encode(),
+        headers=headers,
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            obj = json.loads(r.read())
+    except urllib.error.HTTPError as e:
+        if e.code == 529:
+            raise HttpThrottled(f"裸 HTTP 529(后端过载/身份限流): {e.read().decode()[:200]}") from e
+        if e.code == 429:
+            raise HttpRateLimited(f"裸 HTTP 429(账户速率/并发限制): {e.read().decode()[:200]}") from e
+        raise RuntimeError(f"裸 HTTP {e.code}: {e.read().decode()[:500]}") from e
+    except OSError as e:
+        raise RuntimeError(f"裸 HTTP 传输失败: {e!r}") from e
+    # 先回 usage(无论成败,产出了 token 就该计;truncated 标记截断留存)。
+    truncated = obj.get("stop_reason") == "max_tokens"
+    if on_usage is not None:
+        usage = obj.get("usage")
+        if isinstance(usage, dict):
+            payload = dict(usage)
+            payload.setdefault("total_cost_usd", 0.0)
+            if truncated:
+                payload["truncated"] = True
+            on_usage(payload)
+    # 截断(stop_reason=max_tokens):thinking 顶到上限 → tool_use 可能不完整(有但畸形/缺字段)。
+    # **有 tool_use 就用**(即使截断;下游 parser 判完整性,不完整则 parse_failed 重试),
+    # 不 cc 回退——曾用"截断就 cc 回退"但 GLM 频繁顶到 max_tokens 致大批请求走 cc(4-6× 慢)。
+    # warn 不在这里打(升档路上的中间截断由 on_progress 进度行叙事,再打 Python UserWarning
+    # 像出了 bug),只打在最终被消费的截断结果上(见 call_http 返回前);on_usage
+    # payload 带 truncated 留存(accumulator 按 _KEYS 取,不受影响)。
+    return obj
+
+
+def _http_forced_result(
+    prompt: str,
+    model: str | None,
+    schema: dict,
+    generic_text_result: bool,
+    base: str,
+    headers: dict,
+    timeout: int,
+    on_usage,
+    on_progress,
+    max_tokens: int | None,
+) -> str:
+    """升档两档重试 + 结果解包（两档策略细节见 call_http docstring）。"""
     # 快路径起步(thinking 不带字段,大多数模型最快);截断且无 tool_use(= thinking
     # 狂想型模型,如 glm-5.3)→ ×2 升档(封顶)再试一发;仍败才回退 cc。**只有两档**:
     # 首档 = 调用方按工作量给的 max_tokens 覆盖(suggest 按簇数),无覆盖用保守默认
@@ -288,12 +356,12 @@ def call_http(prompt, config: LLMCallConfig, on_usage, on_progress=None, max_tok
     # 报行让看终端的人知道它在动)。
     first = max_tokens or HTTP_MAX_TOKENS
     boosted = min(max(first * 2, HTTP_RETRY_FLOOR_TOKENS), HTTP_RETRY_MAX_TOKENS)
-    obj = _attempt(first)
+    obj = _http_attempt(prompt, model, schema, base, headers, timeout, first, on_usage)
     tool_items = _pick_tool_items(obj)
     mt_used = first
     if tool_items is None and obj.get("stop_reason") == "max_tokens":
         _emit_progress(on_progress, f"  ↳ 截断(thinking 顶满、没出结果),升档 max_tokens={boosted} 重试…")
-        obj = _attempt(boosted)
+        obj = _http_attempt(prompt, model, schema, base, headers, timeout, boosted, on_usage)
         tool_items = _pick_tool_items(obj)
         mt_used = boosted
     # 没拿到 tool_use(thinking 撑满没空间产 / GLM 主动 end_turn 不调)= forced 真失败
@@ -301,6 +369,17 @@ def call_http(prompt, config: LLMCallConfig, on_usage, on_progress=None, max_tok
     if tool_items is None:
         raise HttpNoToolUse(
             f"裸 HTTP 未返回 tool_use(force 失败,thinking 撑满或 GLM 主动不调?): {str(obj)[:300]}",
+            stop_reason=obj.get("stop_reason"),
+        )
+    text_result = tool_items.get("result") if generic_text_result and isinstance(tool_items, dict) else None
+    if generic_text_result and not isinstance(text_result, str):
+        # Some Anthropic-compatible endpoints return a tool_use block with an
+        # empty input (or omit ``result``). Treat that as a failed forced-tool
+        # call so the dispatcher can fall back instead of returning ``{}`` to
+        # callers that would silently create an empty report/eval case.
+        raise HttpNoToolUse(
+            "裸 HTTP generic result 无效(result 缺失或不是字符串): "
+            f"{str(obj)[:300]}",
             stop_reason=obj.get("stop_reason"),
         )
     # warn 只打在**最终被下游消费**的截断结果上(截断但有 tool_use、要交给 parser 的)——
@@ -312,6 +391,8 @@ def call_http(prompt, config: LLMCallConfig, on_usage, on_progress=None, max_tok
             f"{mt_used}):thinking 顶到上限,tool_use 可能不完整 → 下游 parser "
             "可能 parse_failed。"
         )
+    if isinstance(text_result, str):
+        return text_result
     return json.dumps(tool_items, ensure_ascii=False)
 
 
@@ -449,8 +530,9 @@ def call_claude(
 
     模型、超时、schema、轮次和传输设置由 ``config`` 提供；用量及进度回调独立传入。
 
-    ``transport``(代码级,默认 ``"cc"``):``"cc"`` → cc CLI(``call_cli``);
-    ``"http"`` → 裸 HTTP 直连(``call_http``,省 cc 进程 spawn + ~25k 系统 prompt/批,
+    ``transport``(代码级):显式值优先；未指定时读 ``SIFT_LLM_TRANSPORT``，最终默认
+    ``"cc"``。``"cc"`` → cc CLI(``call_cli``);``"http"`` → 裸 HTTP 直连
+    (``call_http``,省 cc 进程 spawn + ~25k 系统 prompt/批,
     forced tool_use 保 schema)。裸 HTTP 撞 529(后端过载/身份限流)/ forced tool_use 拿不到
     tool_use 块(GLM 只回 thinking / thinking 撑满 ``HTTP_MAX_TOKENS`` → ``HttpNoToolUse``)
     → 回退 cc(cc 多轮催出 + 降级文本兜底);其余 HTTP 错(4xx/timeout→RuntimeError)不回退
@@ -463,7 +545,7 @@ def call_claude(
     timeout = config.timeout
     schema = config.schema
     max_turns = config.max_turns
-    transport = config.transport
+    transport = resolve_llm_transport(config.transport)
     max_tokens = config.max_tokens
     if transport == "http":
         try:

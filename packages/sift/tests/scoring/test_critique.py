@@ -188,9 +188,9 @@ def test_analyze_calls_claude_and_fills_body(monkeypatch, tmp_path):
     assert "执行 deploy.sh" in captured["prompt"]  # body_text 喂进去了
     assert "description" not in captured["prompt"].split("SKILL.md 正文")[1].split("##")[0]  # 不喂 frontmatter
     assert captured["config"].transport == "http"  # 走裸 HTTP(省 cc spawn + 系统 prompt)
-    schema = captured["config"].schema
-    # inline schema 透传(forced tool_use);dimensions 嵌在 properties 下
-    assert isinstance(schema, dict) and "dimensions" in schema["properties"]
+    # 复杂嵌套 schema 在长 prompt 下会被部分 Anthropic 兼容端点退化成空 input;
+    # transport 统一使用单字符串 result schema,由 prompt + parser 约束 JSON 形状。
+    assert captured["config"].schema is None
     assert len(rep.dimensions) == 6  # 4 body + 2 desc(空 description 补 missing-note)
     assert rep.token_usage.get("input_tokens") == 100  # on_usage 收了 token
     assert rep.duration_seconds >= 0.0
@@ -359,8 +359,8 @@ def test_analyze_multi_run_all_fail_returns_empty(monkeypatch, tmp_path):
 # ---- subject 措辞(skill 分支字节不变 / agent 换准词;4 维共用)----
 def test_build_prompt_agent_uses_agent_terms():
     """agent 模式 prompt 用 agent 措辞,不残留 'SKILL.md'。"""
-    prompt = _build_critique_prompt("reviewer", "你只审查代码不改码", subject="agent")
-    assert "reviewer" in prompt
+    prompt = _build_critique_prompt("auditor", "你只审查代码不改码", subject="agent")
+    assert "auditor" in prompt
     assert "agent 定义正文" in prompt  # agent 分支准词
     assert "Claude Code agent" in prompt  # 角色框定换准词
     assert "SKILL.md" not in prompt  # 不残留 skill 词
@@ -379,8 +379,8 @@ def test_build_prompt_skill_branch_keeps_skillmd_wording():
 
 def test_analyze_threads_subject_agent_to_prompt(monkeypatch, tmp_path):
     """analyze_content_quality(subject='agent') 把 subject 透到 prompt(agent 准词出现)。"""
-    agent_md = tmp_path / "reviewer.md"
-    agent_md.write_text(('---\nname: reviewer\ndescription: ""\n---\n# 你是审查者\n只读不改\n'), encoding="utf-8")
+    agent_md = tmp_path / "auditor.md"
+    agent_md.write_text(('---\nname: auditor\ndescription: ""\n---\n# 你是审查者\n只读不改\n'), encoding="utf-8")
     captured = {}
 
     def fake_call(prompt, on_usage=None, config: LLMCallConfig = LLMCallConfig(), **kw):
@@ -416,8 +416,8 @@ def test_build_desc_prompt_contains_two_rubrics_and_desc():
 
 def test_build_desc_prompt_agent_uses_agent_terms():
     """agent 模式 desc prompt 用 agent 措辞,不残留 'SKILL.md'。"""
-    prompt = _build_desc_critique_prompt("reviewer", "审代码", subject="agent")
-    assert "reviewer" in prompt
+    prompt = _build_desc_critique_prompt("auditor", "审代码", subject="agent")
+    assert "auditor" in prompt
     assert "agent" in prompt
     assert "SKILL.md" not in prompt
     for key in crt.DESCRIPTION_DIMENSIONS:

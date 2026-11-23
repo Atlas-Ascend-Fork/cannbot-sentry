@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import shlex
 
 
 def extract_first_balanced(text: str, open_ch: str = "[", close_ch: str = "]") -> str | None:
@@ -124,13 +125,108 @@ def _norm_path(p: str) -> str:
     return p.lower()
 
 
+def _bash_executes_script(script_path: str, command: str) -> bool:
+    """Match a script in command position, not in an echo or another argument."""
+    if not script_path.startswith("scripts/") or not isinstance(command, str) or not command:
+        return False
+    lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|\n")
+    lexer.whitespace_split = True
+    lexer.whitespace = " \t\r"  # Keep unquoted newlines as command separators.
+    lexer.commenters = "#"
+    try:
+        tokens = list(lexer)
+    except ValueError:
+        return False
+    target = _norm_path(script_path)
+    segment: list[str] = []
+    for token in [*tokens, ";"]:
+        if token in _BASH_BOUNDARY_TOKENS:
+            if _segment_executes_target(segment, target):
+                return True
+            segment = []
+        else:
+            segment.append(token)
+    return False
+
+
+_BASH_BOUNDARY_TOKENS = {";", "&&", "||", "|", "&", "\n"}
+
+
+def _matches_target(token: str, target: str) -> bool:
+    candidate = _norm_path(token)
+    return candidate == target or candidate.endswith("/" + target)
+
+
+_WRAPPER_NAMES = {"env", "sudo", "command", "time", "nohup", "exec"}
+
+_INTERPRETER_NAMES = {"bash", "sh", "zsh", "node", "ruby", "perl", "source", "."}
+
+_WRAPPER_OPTION_ARITY = {"-u": 2, "--unset": 2, "-C": 2, "--chdir": 2, "-g": 2, "-f": 2}
+
+
+def _skip_wrapper(segment: list[str], index: int, name: str) -> int | None:
+    """推进 env/sudo/command/time/nohup/exec 修饰链。
+
+    返回跳过修饰链及其选项后的 index；``command -v/-V`` 只打印路径不执行 → None。
+    """
+    index += 1
+    if name == "command" and index < len(segment) and segment[index] in {"-v", "-V"}:
+        return None
+    while index < len(segment) and segment[index].startswith("-"):
+        index += _WRAPPER_OPTION_ARITY.get(segment[index], 1)
+    return index
+
+
+def _inline_options(name: str) -> set[str]:
+    """解释器的"内联脚本"选项集合（命中即不算执行目标文件）。"""
+    inline = {"-c", "-lc", "--command"}
+    if name in {"node", "ruby", "perl"}:
+        inline.update({"-e", "--eval"})
+    if name.startswith(("python", "pypy")):
+        inline.add("-m")
+    return inline
+
+
+def _interpreter_runs_target(segment: list[str], index: int, name: str, target: str) -> bool:
+    """解释器后的首个非选项词是否为目标脚本；-c/-e/-m 内联脚本不算文件执行。"""
+    inline = _inline_options(name)
+    while index < len(segment) and segment[index].startswith("-"):
+        if segment[index] in inline:
+            return False
+        index += 1
+    return index < len(segment) and _matches_target(segment[index], target)
+
+
+def _segment_executes_target(segment: list[str], target: str) -> bool:
+    """Return True when the segment's first real command runs the target script."""
+    index = 0
+    while index < len(segment):
+        word = segment[index]
+        if re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*=.*", word):
+            index += 1
+            continue
+        name = word.rsplit("/", 1)[-1]
+        if name in _WRAPPER_NAMES:
+            index = _skip_wrapper(segment, index, name)
+            if index is None:
+                return False
+            continue
+        if _matches_target(word, target):
+            return True
+        if name not in _INTERPRETER_NAMES and not re.fullmatch(r"(?:python|pypy)\d*(?:\.\d+)*", name):
+            return False
+        return _interpreter_runs_target(segment, index + 1, name, target)
+    return False
+
+
 def _path_matches(script_path: str, tc) -> bool:
     """script_path 是否匹配 tc 的路径。
 
     优先结构化 ``tc.input`` 的路径字段,规范化后用**分隔符边界**比对(``==`` 或
     ``endswith("/"+sp)``)——同时解相对/绝对差异(``/workspace/r.md`` 命中 ``r.md``)和
     前缀边界(``/not-r.md`` 不被 ``r.md`` 误命中,比裸子串多修一个 bug)。无结构化
-    input(dict 风格 / 旧数据 / ``input=None``)→ 回退子串(input_summary),向后兼容。
+    ``scripts/`` 路径也识别 Bash 中实际执行的脚本。无结构化 input(dict 风格 /
+    旧数据 / ``input=None``)→ 回退子串(input_summary),向后兼容。
     """
     sp = _norm_path(script_path)
     if not sp:
@@ -144,6 +240,9 @@ def _path_matches(script_path: str, tc) -> bool:
             fp = _norm_path(val)
             if fp == sp or fp.endswith("/" + sp):
                 return True
+        tc_name = tc.name if hasattr(tc, "name") else tc.get("name", "")
+        if str(tc_name).strip().lower() == "bash" and _bash_executes_script(script_path, tc_input.get("command") or ""):
+            return True
         return False  # 有结构化 input 但路径字段不匹配 → 精确化(不回退子串歪打正着)
     tc_summary = tc.input_summary if hasattr(tc, "input_summary") else tc.get("input_summary", "")
     return sp in (tc_summary or "").lower()

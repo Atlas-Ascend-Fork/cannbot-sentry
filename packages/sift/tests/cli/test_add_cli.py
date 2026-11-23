@@ -63,12 +63,22 @@ def test_add_idea_prints_token_and_duration(monkeypatch, tmp_path):
     assert any("200" in p for p in printed), printed  # 150 + 50
 
 
+def test_add_invalid_transport_exits_cleanly(monkeypatch, tmp_path):
+    """Invalid SIFT_LLM_TRANSPORT is a clean CLI error, not a raw traceback."""
+    monkeypatch.setenv("SIFT_LLM_TRANSPORT", "auto")
+    sp = _skill_with_evals(tmp_path)
+    r = runner.invoke(app, ["add", str(sp), "--idea", "test something"])
+    assert r.exit_code == 3
+    assert "未知 LLM transport" in r.output
+    assert "Traceback" not in r.output
+
+
 def _agent_with_evals(tmp_path):
     """agent 目录:.md + evals/evals.json(像 skill 的 <skill>/evals/)。"""
-    adir = tmp_path / "pr-reviewer"
+    adir = tmp_path / "pr-auditor"
     adir.mkdir()
-    (adir / "pr-reviewer.md").write_text(
-        "---\nname: pr-reviewer\ndescription: 审 PR diff\ntools: [Read, Grep]\n---\n# 审查者\n只读不改\n",
+    (adir / "pr-auditor.md").write_text(
+        "---\nname: pr-auditor\ndescription: 审 PR diff\ntools: [Read, Grep]\n---\n# 审查者\n只读不改\n",
         encoding="utf-8",
     )
     edir = adir / "evals"
@@ -76,13 +86,13 @@ def _agent_with_evals(tmp_path):
     (edir / "evals.json").write_text(
         json.dumps(
             {
-                "skill_name": "pr-reviewer",
+                "skill_name": "pr-auditor",
                 "evals": [{"id": 1, "prompt": "old", "level": "L1", "expectations": ["e"], "assertions": []}],
             }
         ),
         encoding="utf-8",
     )
-    return adir / "pr-reviewer.md"
+    return adir / "pr-auditor.md"
 
 
 def test_add_kind_agent_routes_agent_prompt(monkeypatch, tmp_path):
