@@ -45,28 +45,63 @@ def _recompute_expectation_counts(
     return out
 
 
+def iter_embedded_json(response: str, kind: type):
+    """Yield complete JSON containers of kind, including within prose/fences."""
+    decoder = json.JSONDecoder()
+    marker = "{" if kind is dict else "["
+    for index, character in enumerate(response):
+        if character != marker:
+            continue
+        try:
+            value, _ = decoder.raw_decode(response, index)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(value, kind):
+            yield value
+
+
+def _outer_scoring_objects(response: str):
+    """Skip decoded nested containers while locating complete scoring objects."""
+    decoder = json.JSONDecoder()
+    index = 0
+    while index < len(response):
+        if response[index] not in "{[":
+            index += 1
+            continue
+        try:
+            value, end = decoder.raw_decode(response, index)
+        except json.JSONDecodeError:
+            index += 1
+            continue
+        index = end
+        if isinstance(value, dict):
+            yield value
+
+
 def parse_comparison_result(response: str) -> ComparisonResult:
     if not response:
         return ComparisonResult(winner="TIE", reasoning="对比调用失败", failed=True)
-    try:
-        data = json.loads(response)
-        return ComparisonResult.model_validate(data)
-    except Exception:
-        import re
-
-        match = re.search(r"\{.*\}", response, re.DOTALL)
-        if match:
-            try:
-                return ComparisonResult.model_validate(json.loads(match.group()))
-            except Exception:
-                logging.getLogger(__name__).debug(
-                    ("Optional operation failed; continuing with fallback"), exc_info=True
-                )
-        return ComparisonResult(winner="TIE", reasoning="无法解析对比响应", failed=True)
+    result = None
+    for data in _outer_scoring_objects(response):
+        winner = data.get("winner")
+        if not isinstance(winner, str) or not winner.strip():
+            continue
+        try:
+            result = ComparisonResult.model_validate(data)
+        except Exception:
+            logging.getLogger(__name__).debug(
+                "Invalid comparison JSON candidate", exc_info=True
+            )
+    if result is not None:
+        return result
+    return ComparisonResult(winner="TIE", reasoning="无法解析对比响应", failed=True)
 
 
 def translate_comparison_result(
-    raw: ComparisonResult, side0_is_pos_a: bool, label_a: str = "with", label_b: str = "without"
+    raw: ComparisonResult,
+    side0_is_pos_a: bool,
+    label_a: str = "with",
+    label_b: str = "without",
 ) -> ComparisonResult:
     """把 LLM 的 position 标签(A/B/TIE)翻成语义 label。
 
@@ -99,7 +134,9 @@ def translate_comparison_result(
             "winner": winner,
             "rubric": _remap(raw.rubric),
             "output_quality": _remap(raw.output_quality),
-            "expectation_results": _recompute_expectation_counts(_remap(raw.expectation_results)),
+            "expectation_results": _recompute_expectation_counts(
+                _remap(raw.expectation_results)
+            ),
             "pos_a_label": a_key,  # 揭盲:LLM position A/B 各自对应的语义 label,供 viewer 标注
             "pos_b_label": b_key,
         }
@@ -117,38 +154,30 @@ def parse_analysis_notes(response: str) -> list[str]:
         notes = _parse_embedded_notes(response)
         if notes is not None:
             return notes
-    return [line.strip().lstrip("- ") for line in response.splitlines() if line.strip() and not line.startswith("#")]
+    return [
+        line.strip().lstrip("- ")
+        for line in response.splitlines()
+        if line.strip() and not line.startswith("#")
+    ]
 
 
 def parse_analysis_result(response: str) -> AnalysisResult | None:
     if not response:
         return None
-    try:
-        data = json.loads(response)
-        return AnalysisResult.model_validate(data)
-    except Exception:
-        import re
-
-        match = re.search(r"\{.*\}", response, re.DOTALL)
-        if match:
-            try:
-                return AnalysisResult.model_validate(json.loads(match.group()))
-            except Exception:
-                logging.getLogger(__name__).debug(
-                    ("Optional operation failed; continuing with fallback"), exc_info=True
-                )
-        return None
+    result = None
+    for data in _outer_scoring_objects(response):
+        if not data.keys() & AnalysisResult.model_fields.keys():
+            continue
+        try:
+            result = AnalysisResult.model_validate(data)
+        except Exception:
+            logging.getLogger(__name__).debug(
+                "Invalid analysis JSON candidate", exc_info=True
+            )
+    return result
 
 
 def _parse_embedded_notes(response):
-    import re
-
-    match = re.search(r"\[.*\]", response, re.DOTALL)
-    if match:
-        try:
-            data = json.loads(match.group())
-            if isinstance(data, list):
-                return [str(item) for item in data]
-        except Exception:
-            logging.getLogger(__name__).debug(("Optional operation failed; continuing with fallback"), exc_info=True)
+    for data in iter_embedded_json(response, list):
+        return [str(item) for item in data]
     return None

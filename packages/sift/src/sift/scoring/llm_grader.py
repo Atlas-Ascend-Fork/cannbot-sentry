@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from pathlib import Path
 
 from sift.models import (
@@ -24,6 +23,7 @@ from sift.models import (
 )
 from sift.scoring._jsonschema import inline_schema
 from sift.scoring.client import ScoringClient
+from sift.scoring.results import iter_embedded_json
 
 # 结构化输出 schema:tier3 判官走 http forced tool_use(call_llm_with_retry transport="http",
 # schema 作 tool input_schema、inline_schema 展开 $ref)。forced tool_use 的 input 必须是
@@ -64,12 +64,16 @@ _GRADING_INTERNAL = {
     "eval_feedback",
     "user_notes_summary",
 }
-_GRADING_PROPS = {k: v for k, v in _GRADER_FULL["properties"].items() if k not in _GRADING_INTERNAL}
+_GRADING_PROPS = {
+    k: v for k, v in _GRADER_FULL["properties"].items() if k not in _GRADING_INTERNAL
+}
 GRADING_SCHEMA: dict = inline_schema(
     {
         "type": "object",
         "properties": _GRADING_PROPS,
-        "required": [r for r in _GRADER_FULL.get("required", []) if r in _GRADING_PROPS],
+        "required": [
+            r for r in _GRADER_FULL.get("required", []) if r in _GRADING_PROPS
+        ],
         **({"$defs": _GRADER_FULL["$defs"]} if "$defs" in _GRADER_FULL else {}),
     }
 )
@@ -84,7 +88,9 @@ class LLMGrader:
 
     @staticmethod
     def _load_prompt_template() -> str:
-        prompt_path = Path(__file__).parent.parent.parent.parent / "agents" / "grader.md"
+        prompt_path = (
+            Path(__file__).parent.parent.parent.parent / "agents" / "grader.md"
+        )
         if prompt_path.exists():
             return prompt_path.read_text(encoding="utf-8")
         return ""
@@ -99,9 +105,10 @@ class LLMGrader:
 
     @staticmethod
     def _build_uneval_result(eval_case: EvalCase, reason: str) -> GradingResult:
-
         return GradingResult(
-            expectations=[_unevaluated_expectation(e, reason) for e in eval_case.expectations],
+            expectations=[
+                _unevaluated_expectation(e, reason) for e in eval_case.expectations
+            ],
             summary=GradingSummary(
                 passed=0,
                 failed=len(eval_case.expectations),
@@ -127,13 +134,7 @@ class LLMGrader:
 
     @staticmethod
     def _extract_json_array(response: str) -> list:
-        match = re.search(r"\[[\s\S]*\]", response)
-        if not match:
-            return []
-        try:
-            return json.loads(match.group())
-        except json.JSONDecodeError:
-            return []
+        return next(iter_embedded_json(response, list), [])
 
     def grade(
         self,
@@ -144,10 +145,14 @@ class LLMGrader:
         on_usage=None,
     ) -> GradingResult:
         prompt = self._build_prompt(eval_case, transcript, output_dir)
-        response = self.client.complete(prompt, on_usage=on_usage, schema=GRADING_SCHEMA)
+        response = self.client.complete(
+            prompt, on_usage=on_usage, schema=GRADING_SCHEMA
+        )
 
         if not response or not response.strip():
-            return self._build_uneval_result(eval_case, "LLM grading returned empty response")
+            return self._build_uneval_result(
+                eval_case, "LLM grading returned empty response"
+            )
 
         try:
             data = json.loads(response)
@@ -187,7 +192,9 @@ class LLMGrader:
 
         return self._parse_tier3_response(response, tier3_assertions)
 
-    def _build_tier3_prompt(self, assertions: list, transcript: str, outputs: str) -> str:
+    def _build_tier3_prompt(
+        self, assertions: list, transcript: str, outputs: str
+    ) -> str:
         lines = []
         for i, a in enumerate(assertions):
             lines.append(f"### Assertion {i}: {a.name}")
@@ -230,12 +237,18 @@ class LLMGrader:
             )
         )
 
-    def _parse_tier3_response(self, response: str, assertions: list) -> list[ExpectationResult]:
+    def _parse_tier3_response(
+        self, response: str, assertions: list
+    ) -> list[ExpectationResult]:
         results: list[ExpectationResult] = []
         items = self._extract_json_array(response)
         if not items:
             for a in assertions:
-                results.append(_unevaluated_expectation(a.name, "Failed to parse LLM grading response"))
+                results.append(
+                    _unevaluated_expectation(
+                        a.name, "Failed to parse LLM grading response"
+                    )
+                )
             return results
 
         results_by_index: dict[int, dict] = {}
@@ -273,7 +286,9 @@ class LLMGrader:
 
         return results
 
-    def _build_prompt(self, eval_case: EvalCase, transcript: str, output_dir: Path) -> str:
+    def _build_prompt(
+        self, eval_case: EvalCase, transcript: str, output_dir: Path
+    ) -> str:
         outputs = self._collect_outputs(output_dir)
         return (
             (
@@ -289,7 +304,11 @@ class LLMGrader:
             )
             + "\n".join(f"- {e}" for e in eval_case.expectations)
             + "\n\n--- TIER 3 ASSERTIONS ---\n"
-            + "\n".join(f"- {a.name} ({a.type.value}): {a.params}" for a in eval_case.assertions if a.tier == "TIER3")
+            + "\n".join(
+                f"- {a.name} ({a.type.value}): {a.params}"
+                for a in eval_case.assertions
+                if a.tier == "TIER3"
+            )
             + (
                 "\n"
                 "\n"
@@ -301,18 +320,18 @@ class LLMGrader:
         )
 
     def _parse_response(self, response: str, eval_case: EvalCase) -> GradingResult:
-        match = re.search(r"\{.*\}", response, re.DOTALL)
-        if match:
+        for data in iter_embedded_json(response, dict):
             try:
-                result = GradingResult.model_validate(json.loads(match.group()))
+                result = GradingResult.model_validate(data)
                 self._normalize_verdicts(result, eval_case)
                 return result
             except Exception:
                 logging.getLogger(__name__).debug(
-                    ("Optional operation failed; continuing with fallback"), exc_info=True
+                    "Invalid grading JSON candidate", exc_info=True
                 )
-
-        return self._build_uneval_result(eval_case, "Unable to parse LLM grading response")
+        return self._build_uneval_result(
+            eval_case, "Unable to parse LLM grading response"
+        )
 
 
 def _unevaluated_expectation(text: str, evidence: str) -> ExpectationResult:
