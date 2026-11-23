@@ -227,7 +227,9 @@ class SecurityVetter:
                 user = scp_match.group("user")
                 host = scp_match.group("host")
                 repo_path = scp_match.group("path")
-                safe_url = f"ssh://{user + '@' if user else ''}{host}/{repo_path.lstrip('/')}"
+                safe_url = (
+                    f"ssh://{user + '@' if user else ''}{host}/{repo_path.lstrip('/')}"
+                )
             else:
                 parts = urlsplit(url)
                 safe_url = parts._replace(
@@ -279,34 +281,11 @@ class SecurityVetter:
                 message="aguara not installed (https://github.com/garagon/aguara)",
             )
 
-        try:
-            proc = subprocess.run(
-                [aguara_bin, "scan", str(skill_path), "--format", "json"],
-                capture_output=True,
-                text=True,
-                timeout=120,
-            )
-            result = proc.stdout.strip()
-        except (subprocess.TimeoutExpired, OSError):
-            return ScannerResult(
-                name="aguara",
-                status=ScannerStatus.SKIP,
-                message="aguara execution failed",
-            )
-
-        if not result:
-            return ScannerResult(
-                name="aguara", status=ScannerStatus.PASS, message="No issues found"
-            )
-
-        try:
-            data = json.loads(result)
-        except json.JSONDecodeError:
-            return ScannerResult(
-                name="aguara", status=ScannerStatus.PASS, message="No structured output"
-            )
-
-        return _aguara_report(data)
+        return _run_external_scanner(
+            "aguara",
+            [aguara_bin, "scan", str(skill_path), "--format", "json"],
+            _aguara_report,
+        )
 
     def _scan_skill_scanner(self, skill_path: Path) -> ScannerResult:
         if self._skip_external:
@@ -324,38 +303,60 @@ class SecurityVetter:
                 message="skill-scanner not installed (https://pypi.org/project/cisco-ai-skill-scanner/)",
             )
 
-        try:
-            proc = subprocess.run(
-                [scanner_bin, "scan", str(skill_path), "--format", "json"],
-                capture_output=True,
-                text=True,
-                timeout=120,
-            )
-            result = proc.stdout.strip()
-        except (subprocess.TimeoutExpired, OSError):
-            return ScannerResult(
-                name="skill-scanner",
-                status=ScannerStatus.SKIP,
-                message="skill-scanner execution failed",
-            )
+        return _run_external_scanner(
+            "skill-scanner",
+            [scanner_bin, "scan", str(skill_path), "--format", "json"],
+            _scanner_security_result,
+        )
 
-        if not result:
-            return ScannerResult(
-                name="skill-scanner",
-                status=ScannerStatus.PASS,
-                message="No issues found",
-            )
 
-        try:
-            data = json.loads(result)
-        except json.JSONDecodeError:
-            return ScannerResult(
-                name="skill-scanner",
-                status=ScannerStatus.PASS,
-                message="No structured output",
-            )
+def _external_scanner_failure(
+    name: str, returncode: int | None = None, stderr: str = "", reason: str = ""
+) -> ScannerResult:
+    """Report an external scanner execution failure without a skill finding."""
+    if reason:
+        detail = f"{name} {reason}; result unavailable"
+    else:
+        detail = f"{name} exited with code {returncode}; result unavailable"
+    if stderr.strip():
+        detail += f": {stderr.strip()[:200]}"
+    return ScannerResult(
+        name=name,
+        status=ScannerStatus.ERROR,
+        message=detail,
+    )
 
-        return _scanner_security_result(data)
+
+def _run_external_scanner(name, command, parse_report) -> ScannerResult:
+    try:
+        proc = subprocess.run(
+            command, capture_output=True, text=True, timeout=120, check=False
+        )
+    except subprocess.TimeoutExpired:
+        return _external_scanner_failure(name, reason="timed out")
+    except OSError as exc:
+        return _external_scanner_failure(name, reason=f"execution failed ({exc})")
+
+    result = proc.stdout.strip()
+    if not result:
+        if proc.returncode != 0:
+            return _external_scanner_failure(name, proc.returncode, proc.stderr)
+        return ScannerResult(
+            name=name, status=ScannerStatus.PASS, message="No issues found"
+        )
+
+    try:
+        report = parse_report(json.loads(result))
+    except json.JSONDecodeError:
+        if proc.returncode != 0:
+            return _external_scanner_failure(name, proc.returncode, proc.stderr)
+        return ScannerResult(
+            name=name, status=ScannerStatus.PASS, message="No structured output"
+        )
+
+    if proc.returncode != 0 and report.status == ScannerStatus.PASS:
+        return _external_scanner_failure(name, proc.returncode, proc.stderr)
+    return report
 
 
 def _scanner_security_result(data):
@@ -420,7 +421,9 @@ def _scan_text_files(skill_path: Path, include_suffixes=None, exclude_suffixes=(
         visited_dirs.add(resolved_root)
 
         # Do not follow directory symlinks that escape the skill root.
-        dirs[:] = [dirname for dirname in dirs if is_within_skill(os.path.join(root, dirname))]
+        dirs[:] = [
+            dirname for dirname in dirs if is_within_skill(os.path.join(root, dirname))
+        ]
 
         for fname in files:
             path = Path(root) / fname

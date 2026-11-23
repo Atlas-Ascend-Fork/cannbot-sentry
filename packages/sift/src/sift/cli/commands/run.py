@@ -146,9 +146,12 @@ def _render_security_report(report, output_console: Console) -> None:
     table.add_column("Status")
     table.add_column("Detail")
     for s in report.scanners:
-        status = {"PASS": "[green]PASS[/green]", "FAIL": "[red]FAIL[/red]", "WARN": "[yellow]WARN[/yellow]"}.get(
-            s.status, "[dim]SKIP[/dim]"
-        )
+        status = {
+            "PASS": "[green]PASS[/green]",
+            "FAIL": "[red]FAIL[/red]",
+            "WARN": "[yellow]WARN[/yellow]",
+            "ERROR": "[red]ERROR[/red]",
+        }.get(s.status, "[dim]SKIP[/dim]")
         table.add_row(s.name, status, s.message)
     output_console.print(table)
 

@@ -119,4 +119,5 @@ class ScannerStatus(str, Enum):
     PASS = "PASS"
     WARN = "WARN"
     FAIL = "FAIL"
+    ERROR = "ERROR"
     SKIP = "SKIP"

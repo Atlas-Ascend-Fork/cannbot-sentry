@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -73,6 +74,32 @@ def base64_skill_dir(tmp_path: Path) -> Path:
         encoding="utf-8",
     )
     return skill
+
+
+def _install_external_scanners(
+    bin_dir: Path, exit_code: int, stdout: dict[str, str]
+) -> None:
+    bin_dir.mkdir()
+    for name in ("aguara", "skill-scanner"):
+        scanner = bin_dir / name
+        scanner.write_text(
+            "#!/usr/bin/env python3\n"
+            f"import sys\nsys.stdout.write({stdout[name]!r})\nsys.exit({exit_code})\n",
+            encoding="utf-8",
+        )
+        scanner.chmod(0o755)
+
+
+def _assert_external_scanner_failure_is_error(
+    vetter: SecurityVetter, skill_dir: Path
+) -> None:
+    report = vetter.vet(skill_dir)
+    assert report.verdict == SecurityVerdict.SAFE
+    for name in ("aguara", "skill-scanner"):
+        scanner_result = next(s for s in report.scanners if s.name == name)
+        assert scanner_result.status == ScannerStatus.ERROR
+        assert not scanner_result.findings
+        assert "result unavailable" in scanner_result.message
 
 
 class TestSecretsScan:
@@ -204,7 +231,9 @@ class TestStructureCheck:
         assert structure.status == ScannerStatus.FAIL
 
     @staticmethod
-    def test_scans_symlinked_directories_and_stops_cycles(vetter: SecurityVetter, tmp_path: Path):
+    def test_scans_symlinked_directories_and_stops_cycles(
+        vetter: SecurityVetter, tmp_path: Path
+    ):
         linked_skill = tmp_path / "linked-skill"
         linked_skill.mkdir()
         payload = linked_skill / "scripts"
@@ -221,8 +250,12 @@ class TestStructureCheck:
             encoding="utf-8",
         )
         try:
-            (linked_skill / "linked-scripts").symlink_to(payload, target_is_directory=True)
-            (payload / "back-to-skill").symlink_to(linked_skill, target_is_directory=True)
+            (linked_skill / "linked-scripts").symlink_to(
+                payload, target_is_directory=True
+            )
+            (payload / "back-to-skill").symlink_to(
+                linked_skill, target_is_directory=True
+            )
         except (NotImplementedError, OSError) as exc:
             pytest.skip(f"directory symlinks unavailable: {exc}")
 
@@ -417,6 +450,75 @@ class TestExternalScanners:
         aguara = [s for s in report.scanners if s.name == "aguara"][0]
         assert aguara.status == ScannerStatus.SKIP
         assert "not installed" in aguara.message
+
+    @staticmethod
+    def test_nonzero_empty_output_reports_scanner_error(
+        monkeypatch, tmp_path: Path, safe_skill_dir: Path
+    ):
+        bin_dir = tmp_path / "bin"
+        _install_external_scanners(bin_dir, 2, {"aguara": "", "skill-scanner": ""})
+        monkeypatch.setenv(
+            "PATH", str(bin_dir) + os.pathsep + os.environ.get("PATH", "")
+        )
+
+        _assert_external_scanner_failure_is_error(
+            SecurityVetter(), safe_skill_dir
+        )
+
+    @staticmethod
+    @pytest.mark.parametrize(
+        "error",
+        [subprocess.TimeoutExpired(["scanner"], 120), OSError("exec failed")],
+    )
+    def test_external_execution_errors_report_scanner_error(
+        monkeypatch, error, safe_skill_dir: Path
+    ):
+        monkeypatch.setattr("sift.security.vetter.shutil.which", lambda name: name)
+
+        def raise_error(*_args, **_kwargs):
+            raise error
+
+        monkeypatch.setattr("sift.security.vetter.subprocess.run", raise_error)
+        _assert_external_scanner_failure_is_error(
+            SecurityVetter(), safe_skill_dir
+        )
+
+    @staticmethod
+    def test_successful_empty_external_scanner_output_is_clean(
+        monkeypatch, tmp_path: Path, safe_skill_dir: Path
+    ):
+        bin_dir = tmp_path / "bin"
+        _install_external_scanners(bin_dir, 0, {"aguara": "", "skill-scanner": ""})
+        monkeypatch.setenv(
+            "PATH", str(bin_dir) + os.pathsep + os.environ.get("PATH", "")
+        )
+
+        report = SecurityVetter().vet(safe_skill_dir)
+
+        assert report.verdict == SecurityVerdict.SAFE
+        assert all(s.status == ScannerStatus.PASS for s in report.scanners[:2])
+
+    @staticmethod
+    def test_nonzero_external_scanner_output_keeps_reported_findings(
+        monkeypatch, tmp_path: Path, safe_skill_dir: Path
+    ):
+        bin_dir = tmp_path / "bin"
+        _install_external_scanners(
+            bin_dir,
+            2,
+            {
+                "aguara": '{"findings":[{"severity":4,"description":"prompt injection"}]}',
+                "skill-scanner": '{"severity":"high","description":"dangerous instruction"}',
+            },
+        )
+        monkeypatch.setenv(
+            "PATH", str(bin_dir) + os.pathsep + os.environ.get("PATH", "")
+        )
+
+        report = SecurityVetter().vet(safe_skill_dir)
+
+        assert report.verdict == SecurityVerdict.BLOCKED
+        assert all(s.status == ScannerStatus.FAIL for s in report.scanners[:2])
 
 
 class TestSecurityReport:

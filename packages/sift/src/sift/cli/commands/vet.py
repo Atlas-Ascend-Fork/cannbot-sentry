@@ -50,6 +50,8 @@ def _render_security_report(report, output_console: Console) -> None:
             status = "[red]FAIL[/red]"
         elif s.status == "WARN":
             status = "[yellow]WARN[/yellow]"
+        elif s.status == "ERROR":
+            status = "[red]ERROR[/red]"
         else:
             status = "[dim]SKIP[/dim]"
         table.add_row(s.name, status, s.message)
