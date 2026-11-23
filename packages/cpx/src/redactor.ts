@@ -50,6 +50,20 @@ function maskAuthValue(v: string): string {
 
 // 字符串层正则组：按厂家键特征 + 常见回显形态打码。
 // 未命中的普通文本保持原引用（性能：大 body 只在命中处新建字符串）。
+function encodedQueryName(name: string): string {
+  return [...name].map(char => {
+    const variants = new Set([
+      char,
+      `%${char.charCodeAt(0).toString(16)}`,
+      `%${char.toUpperCase().charCodeAt(0).toString(16)}`,
+    ]);
+    return `(?:${[...variants].join('|')})`;
+  }).join('');
+}
+
+const QUERY_KEY_PATTERN = ['api_key', 'api-key', 'apikey', 'key', 'access_token', 'token']
+  .map(encodedQueryName).join('|');
+
 const STRING_RULES: Array<{ re: RegExp; build: (m: RegExpMatchArray) => string }> = [
   {
     // 明确的 Authorization 头允许短凭据，并覆盖大小写变体。
@@ -61,6 +75,11 @@ const STRING_RULES: Array<{ re: RegExp; build: (m: RegExpMatchArray) => string }
     // 短 Token/Basic 可能是常见英文短语，因此要求 header 上下文。
     re: /\b(Bearer|Basic)\s+([A-Za-z0-9._~+/=-]{16,})(?![A-Za-z0-9._~+/=-]|…)/gi,
     build: m => `${m[1]} ${maskSecret(m[2])}`,
+  },
+  {
+    // URL query 键：?key=AIza… / &api-key=…（含 request.path 与文本里的 URL）
+    re: new RegExp(`([?&](?:${QUERY_KEY_PATTERN})=)([A-Za-z0-9._~%+/=-]{8,})`, 'gi'),
+    build: m => `${m[1]}${maskSecret(m[2])}`,
   },
   {
     // 裸配置字段回显：字段名明确指向凭据，因此短值也必须打码。
@@ -78,11 +97,6 @@ const STRING_RULES: Array<{ re: RegExp; build: (m: RegExpMatchArray) => string }
     // 内嵌 JSON 字段："api_key": "xxx"（cat settings.json / 配置打印）
     re: /("(?:api[_-]?key|apiKey|authorization|access[_-]?token|refresh[_-]?token|client[_-]?secret|x-api-key)"\s*:\s*")([^"]{12,})(")/gi,
     build: m => `${m[1]}${maskSecret(m[2])}${m[3]}`,
-  },
-  {
-    // URL query 键：?key=AIza… / &api-key=…（含 request.path 与文本里的 URL）
-    re: /([?&](?:api[_-]?key|key|access_token|token)=)([A-Za-z0-9._~%-]{8,})/gi,
-    build: m => `${m[1]}${maskSecret(m[2])}`,
   },
   {
     // 厂家前缀键：anthropic / openrouter / openai project / groq / google / xai /

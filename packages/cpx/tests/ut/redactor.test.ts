@@ -138,6 +138,9 @@ describe('字符串层：内容回显打码', () => {
       'GL-4 是一个模型编号',
       'sk-short 这个太短不像键',
       '{"key": "normal-value", "model": "claude-sonnet-4"}',
+      '/v1/messages?monkey=fixture-query-secret-0123456789&api_key_extra=fixture-query-secret-0123456789',
+      '/v1/messages?api%ZZkey=fixture-query-secret-0123456789&access+token=fixture-query-secret-0123456789',
+      '/v1/%3Fkey=fixture-query-secret-0123456789?alt=json',
       'Bearer 票据这个词本身没有凭据',
     ];
     for (const text of clean) {
@@ -240,4 +243,48 @@ describe('redactRecord + 落盘数据流', () => {
     redactRecord(rec);
     expect(JSON.stringify(rec)).toBe(before);
   });
+});
+
+
+describe('URL query capture preserves encoded names while masking credentials', () => {
+  const names = [
+    ['key', 'key'], ['api_key', 'api_key'],
+    ['%6Bey', 'key'], ['%4Bey', 'Key'], ['api%5Fkey', 'api_key'],
+    ['%61%70%69%5f%6b%65%79', 'api_key'],
+    ['%41%50%49%5F%4B%45%59', 'API_KEY'],
+    ['api-%6Bey', 'api-key'], ['api%2Dkey', 'api-key'],
+    ['%61pikey', 'apikey'], ['access%5Ftoken', 'access_token'],
+    ['%74oken', 'token'], ['to%6Ben', 'token'],
+  ];
+  const values = [
+    'fixture-query-secret-0123456789',
+    'fixture%2Fquery%2Bsecret%3D0123456789',
+    'fixturequeryABCD+/EFGH0123456789==',
+  ];
+  for (const [name, decoded] of names) {
+    for (const value of values) {
+      it(`captures ${name} with ${value}`, () => {
+        const url = `/v1/messages?alt=json&${name}=${value}&max_tokens=4096`;
+        expect([...new URLSearchParams(url.split('?')[1]).keys()]).toContain(decoded);
+        const expected = url.replace(value, maskSecret(value));
+        const sid = `query-fixture-${names.findIndex(x => x[0] === name)}-${values.indexOf(value)}`;
+        const rec: ProxyRecord = {
+          sid, protocol: 'anthropic', receivedAt: 1, completedAt: 2,
+          latencyMs: 1, ttftMs: null,
+          request: { path: url, model: 'fixture', body: {
+            model: 'fixture', max_tokens: 4096, messages: [{ role: 'user', content: url }],
+          } },
+          response: { status: 200, model: 'fixture', stop_reason: 'end_turn',
+            content: [{ type: 'text', text: url }], usage: { input_tokens: 1, output_tokens: 1 } },
+        };
+        redactRecord(rec);
+        expect(rec.request.path).toBe(expected);
+        claudeEmit(rec);
+        const text = fs.readFileSync(sessionFilePath(sid), 'utf8');
+        expect(text).not.toContain(value);
+        expect(text).toContain(expected);
+        expect(text).toContain('max_tokens=4096');
+      });
+    }
+  }
 });

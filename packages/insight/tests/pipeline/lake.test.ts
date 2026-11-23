@@ -99,6 +99,21 @@ fs.writeFileSync(path.join(FIXTURES, SID, 'subagents', `${SUB_ID}.meta.json`), J
 // 杂散文件（含明文密钥）：白名单拷贝必须把它挡在 staging 之外，永不进公开仓
 fs.writeFileSync(path.join(FIXTURES, SID, 'subagents', 'stray-notes.txt'), 'DASHSCOPE_API_KEY=sk-strayfile-secret-1234567890abcd\n');
 
+const queryCases: { credential: string; queryNames: string[]; encodedValueQueries: { name: string; value: string }[] } = JSON.parse(
+  fs.readFileSync(path.resolve(__dirname, '../data/query-credentials.json'), 'utf8'),
+);
+const QUERY_CREDENTIAL = queryCases.credential;
+const QUERY_NAMES = queryCases.queryNames;
+const QUERY_URLS = QUERY_NAMES.map(name => `/v1/messages?alt=json&${name}=${QUERY_CREDENTIAL}&max_tokens=4096`);
+const ENCODED_QUERY_URLS = queryCases.encodedValueQueries.map(({ name, value }) => ({
+  url: `/v1/messages?${name}=${value}&note=fixture%2Fpublic%2Bcontext`, value,
+}));
+const queryFixture = path.join(FIXTURES, `${SID}.jsonl`);
+fs.appendFileSync(queryFixture, JSON.stringify({
+  type: 'user', message: { role: 'user', content: [...QUERY_URLS, ...ENCODED_QUERY_URLS.map(({ url }) => url)].join('\n') },
+  timestamp: '2026-08-19T03:00:11.000Z',
+}) + '\n');
+
 // opencode-sample.db 是 gitignored 二进制 fixture（OAT 禁二进制入库）：从入库
 // .sql（source of truth）物化本文件私有副本——无共享路径首建竞态、不依赖其它
 // 文件先跑（原共享路径 existsSync 守卫的并行首建竞态由 review 指出后收敛到
@@ -224,6 +239,30 @@ describe('lake 闭环：上传（治理）→ push → 列表 → 物化 → 导
     expect(text).toContain('sk-a…');        // maskSecret: 前4…后4
     expect(text).toContain('LTAI…IJKL');    // env 赋值回显同样打码
     expect(text).toContain('max_tokens=4096'); // 零误伤基准
+  });
+
+  it('native JSONL URL queries are governed before real local Git upload', () => {
+    const materialized = mirror.materializeSession(SID, undefined, 'native');
+    const text = compression.readCaptureText(materialized);
+    expect(text).not.toContain(QUERY_CREDENTIAL);
+    for (const url of QUERY_URLS) {
+      expect(text).toContain(url.replace(QUERY_CREDENTIAL, governance.maskSecret(QUERY_CREDENTIAL)));
+    }
+    expect(text).toContain('max_tokens=4096');
+    expect(fs.readFileSync(queryFixture, 'utf8')).toContain(QUERY_CREDENTIAL);
+  });
+
+  it('plain query names with encoded values are completely masked before upload', () => {
+    const materialized = mirror.materializeSession(SID, undefined, 'native');
+    const text = compression.readCaptureText(materialized);
+    const original = fs.readFileSync(queryFixture, 'utf8');
+    for (const { url, value } of ENCODED_QUERY_URLS) {
+      expect(text).toContain(url.replace(value, governance.maskSecret(value)));
+      expect(text).not.toContain(value);
+      expect(text).not.toContain('%2Fquery%2Bsecret%3D0123456789');
+      expect(original).toContain(url);
+    }
+    expect(text).toContain('&note=fixture%2Fpublic%2Bcontext');
   });
 
   it('杂散文件不进公开仓：staging 白名单只带 .jsonl/.json，stray 内容零泄漏', () => {

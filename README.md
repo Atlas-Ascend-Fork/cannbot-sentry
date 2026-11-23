@@ -19,7 +19,7 @@ While agents run on the field, Sentry stands on the sideline: **recording what h
 | Capability | Question Answered | Highlights |
 |-----------|-------------------|-----------|
 | **Observe** (packages/insight) | What happened during a run? | Full profile: tokens, cost, context; Turn / Tool / Skill replayable timeline; forensic file-scene rebuild by timestamp |
-| **Capture** (packages/cpx) | What went over the wire? | Gateway bypass-captures full-context LLM requests/responses; API keys never touch disk (masked at the single write chokepoint) |
+| **Capture** (packages/cpx) | What went over the wire? | Gateway bypass-captures full-context LLM requests/responses; API keys are masked before writing, including plain and percent-encoded authentication query names |
 | **Audit** (packages/sift) | Was the declaration followed? | Dual verification: process compliance + result consistency; reconciles execution vs. declared Skill / Agent / Workflow, with evidence back-links |
 | **Evaluate** (packages/sift) | Was it done well? | Static analysis + security review (rule-driven); dynamic A/B (with/without Skill, version comparison); verdict reports + CI gates |
 
