@@ -98,7 +98,11 @@ class AnthropicReassembler implements Reassembler {
           id: cb.id as string | undefined,
           name: cb.name as string | undefined,
           inputPartial: '',
+          input: typeof cb.input === 'object' && cb.input !== null && !Array.isArray(cb.input)
+            ? cb.input as Record<string, unknown> : undefined,
           tool_use_id: cb.tool_use_id as string | undefined,
+          content: typeof cb.content === 'string' || Array.isArray(cb.content) || (typeof cb.content === 'object' && cb.content !== null)
+            ? cb.content as AnthropicBlockState['content'] : undefined,
         });
         break;
       }
@@ -160,6 +164,7 @@ class AnthropicReassembler implements Reassembler {
       if (b.name) out.name = b.name;
       if (b.input !== undefined) out.input = b.input;
       if (b.tool_use_id) out.tool_use_id = b.tool_use_id;
+      if (b.content !== undefined) out.content = b.content;
       return out;
     });
     return { model: this.model, stop_reason: this.stopReason, content, usage: this.usage, firstTokenAt: this.firstTokenAt };

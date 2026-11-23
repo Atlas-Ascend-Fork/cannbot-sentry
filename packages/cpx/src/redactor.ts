@@ -66,6 +66,10 @@ const QUERY_KEY_PATTERN = ['api_key', 'api-key', 'apikey', 'key', 'access_token'
 
 const STRING_RULES: Array<{ re: RegExp; build: (m: RegExpMatchArray) => string }> = [
   {
+    re: /\b([a-z][a-z0-9+.-]*:\/\/[^/?#\s:@"']*:)((?!\*{4}@)[^/?#@\s"'…]+)(@)/gi,
+    build: m => m[1] + maskSecret(m[2]) + m[3],
+  },
+  {
     // 明确的 Authorization 头允许短凭据，并覆盖大小写变体。
     re: /\b(Authorization\s*[:=]\s*)(Bearer|Basic|Token)\s+([A-Za-z0-9._~+/=-]+)(?![A-Za-z0-9._~+/=-]|…)/gi,
     build: m => `${m[1]}${m[2]} ${maskSecret(m[3])}`,

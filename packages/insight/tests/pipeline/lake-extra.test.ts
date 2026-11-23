@@ -120,7 +120,7 @@ describe('lake 镜像自愈：fetch 失败 → 删库重建', () => {
 
 // ─────────────────────────────────────────────────────────────────────
 describe('lake 治理形态全覆盖 + parity（与 proxy/src/redactor.ts 字节一致）', () => {
-  // 厂家前缀键：覆盖 governance STRING_RULES 第 5 条全部 9 种前缀
+  // 厂家前缀键：覆盖 governance STRING_RULES 的全部 9 种厂家前缀
   const KEY_FORMS = [
     'sk-ant-api03-AAAA1111BBBB2222CCCC3333DDDD4444EEEE5', // anthropic
     'sk-or-aaaabbbbcccc1111222233334444',                  // openrouter

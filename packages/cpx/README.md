@@ -22,7 +22,7 @@ agent 子进程 ──HTTP──▶ cpx（per-session proxy）──透传──
 - **子代理捕获**：claude / opencode 双路由，产物对齐 insight 原生 `subagents/` 布局
 - **多 provider 透明路由**：自动发现 opencode 各 provider 的真实 upstream（二进制扫描 + 配置），按 `/<providerId>/` 前缀精确转发
 - **Tab 补全安装即用**：npm 安装与 install.sh 自动装配 bash/zsh 补全（静态上下文零进程 ~3ms），无需任何手动启用
-- **密钥永不落盘**：所有落盘数据经过 `redactor` 统一入口清洗（结构层键名 + 字符串层厂家键形），已真机双链路验证 0 泄漏
+- **内容凭据打码**：落盘前统一处理敏感键、已知 API Key/Bearer/赋值/query 形态与连接 URI 密码；普通字段和命令输出保持可用。
 - **7z at rest**：进行中明文追加（`tail -F` 可看），退出自动压缩为 `.jsonl.7z`（LZMA2，比率高 gzip 30-50%；确定性产出保重传幂等），resume 自动解压续捕；存量 `.jsonl.gz` 永续可读；**注入压缩**（dedup，默认关）：重注入的相同清单压成标记，只压捕获不改转发
 
 ## 安装
@@ -170,7 +170,7 @@ insight 导入与长期 serving 均直读 verbatim（`.jsonl.7z` / `.jsonl.gz` �
 
 ## 密钥安全
 
-API key / 凭据永不落盘。headers 本就不落盘；清洗的是**内容级泄漏面**——对话内容里的键回显（`env` 输出、粘贴的配置）、URL query 带键、`Bearer` 凭据等，在唯一落盘入口 `dispatchEmit()` 统一打码（`前4…后4`，排障可辨厂家）；敏感键名全等 + 厂家键形正则双识别，`max_tokens` 等正常字段零误伤。
+headers 本就不落盘。内容清洗覆盖敏感键、已知 API Key/Bearer/赋值/query 形态，以及连接 URI 的 userinfo 密码；在 dispatchEmit 统一打码（前4…后4，短值用 ****）。stdout/stderr 走同一规则，普通输出仍保留。无标记的任意裸字符串无法保证自动识别为凭据，捕获前应避免让命令输出未受保护的凭据。
 
 ## 配置
 
