@@ -202,6 +202,32 @@ describe('redactRecord + 落盘数据流', () => {
     expect(raw).toContain(maskSecret(ANTHROPIC_KEY));
   });
 
+  it.each([
+    ['camel', { refreshToken: 'opaque-test-refresh-credential', clientSecret: 'opaque-test-client-credential' }],
+    ['upper', { REFRESHTOKEN: 'tiny', CLIENTSECRET: 'short' }],
+  ])('%s credential fields are masked before emitter persistence', (variant, credentials) => {
+    const record: ProxyRecord = {
+      sid: `redact-credentials-${variant}`,
+      protocol: 'anthropic',
+      receivedAt: 1, completedAt: 2, latencyMs: 1, ttftMs: null,
+      request: { path: '/v1/messages', model: 'm', body: { messages: [{ role: 'user', content: 'synthetic credential test' }] } },
+      response: {
+        status: 200, model: 'm', stop_reason: 'tool_use',
+        content: [{ type: 'tool_use', id: 'tool_credentials', name: 'test_tool', input: { credentials, max_tokens: 4096 } }],
+        usage: { input_tokens: 1, output_tokens: 1 },
+      },
+    };
+    const secrets = Object.values(credentials);
+    redactRecord(record);
+    claudeEmit(record);
+    const persisted = fs.readFileSync(sessionFilePath(record.sid), 'utf-8');
+    for (const secret of secrets) {
+      expect(persisted).not.toContain(secret);
+      expect(persisted).toContain(maskSecret(secret));
+    }
+    expect(persisted).toContain('"max_tokens":4096');
+  });
+
   it('干净 record 清洗后内容不变', () => {
     const rec: ProxyRecord = {
       sid: 'redact-clean-1',

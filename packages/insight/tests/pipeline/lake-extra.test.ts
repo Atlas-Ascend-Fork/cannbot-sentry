@@ -197,6 +197,32 @@ describe('lake 治理形态全覆盖 + parity（与 proxy/src/redactor.ts 字节
 });
 
 // ─────────────────────────────────────────────────────────────────────
+describe('credential field governance through upload and materialization', () => {
+  const cases = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../data/credential-key-variants.json'), 'utf8')) as Array<{
+    name: string;
+    credentials: Record<string, string>;
+  }>;
+
+  it.each(cases)('$name credentials are absent from the materialized capture', async ({ name, credentials }) => {
+    const taskId = `cc-extra-credentials-${name}`;
+    EXTRA_SIDS.push(taskId);
+    const line = JSON.parse(turnLine(0, 'assistant', 'synthetic credential test'));
+    line.message.content = [{ type: 'tool_use', id: `tool_${name}`, name: 'test_tool', input: { credentials, max_tokens: 4096 } }];
+    const fixture = writeJsonlFixture(taskId, [JSON.stringify(line)]);
+    const original = fs.readFileSync(fixture, 'utf8');
+    await importSession(fixture, taskId, prisma, fixture, 'claude-jsonl');
+    await lake.uploadLakeSession(prisma, taskId, '提交人: test\n内容描述: synthetic credential fields', undefined, 'others');
+    const capture = readCaptureText(mirror.materializeSession(taskId));
+    for (const secret of Object.values(credentials)) {
+      expect(capture).not.toContain(secret);
+      expect(capture).toContain(governance.maskSecret(secret));
+    }
+    expect(capture).toContain('"max_tokens":4096');
+    expect(governance.governText(capture).residue).toEqual([]);
+    expect(fs.readFileSync(fixture, 'utf8')).toBe(original);
+  });
+});
+
 describe('lake 重复上传覆盖语义：改内容后重传同 sid → 新 commit 替换文件夹', () => {
   const SID_OVR = 'cc-extra-overwrite';
   EXTRA_SIDS.push(SID_OVR);

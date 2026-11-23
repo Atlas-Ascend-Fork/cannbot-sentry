@@ -21,19 +21,19 @@ export function maskSecret(v: string): string {
   return `${v.slice(0, 4)}…${v.slice(-4)}`;
 }
 
-// 结构层键名名单：全等比较（大小写不敏感），snake/kebab/camel 变体逐个列入。
+// 结构层键名名单：键小写后全等比较，只存小写规范形态。
 // 刻意不含裸 "key"/"token"——tool 入参里大量合法字段（max_tokens、
 // input_tokens、tool_use_id 等以精确匹配保证零误伤）。
 const SENSITIVE_KEYS = new Set([
   'authorization', 'proxy-authorization',
   'x-api-key', 'api-key', 'apikey',
-  'api_key', 'apiKey',
+  'api_key',
   'x-goog-api-key', 'goog-api-key', 'x-goog-apikey',
   'cookie', 'set-cookie',
-  'access_token', 'access-token', 'accesstoken', 'accessToken',
-  'refresh_token', 'refresh-token', 'refreshToken',
-  'client_secret', 'client-secret', 'clientSecret',
-  'secret_key', 'secret-key', 'secretkey', 'secretKey',
+  'access_token', 'access-token', 'accesstoken',
+  'refresh_token', 'refresh-token', 'refreshtoken',
+  'client_secret', 'client-secret', 'clientsecret',
+  'secret_key', 'secret-key', 'secretkey',
   'password', 'passwd',
 ]);
 
