@@ -10,6 +10,7 @@
 
 from __future__ import annotations
 
+import ast
 import json
 import logging
 import re
@@ -46,7 +47,9 @@ class ProgrammaticChecker:
     # ---- Tier 1 handlers ----
 
     @staticmethod
-    def _file_exists(params: dict, output_dir: Path, _ctx: dict) -> tuple[AssertionVerdict, str]:
+    def _file_exists(
+        params: dict, output_dir: Path, _ctx: dict
+    ) -> tuple[AssertionVerdict, str]:
         filename = params.get("filename", "")
         target = output_dir / filename
         if target.exists():
@@ -54,7 +57,9 @@ class ProgrammaticChecker:
         return AssertionVerdict.FAIL, f"File not found: {filename}"
 
     @staticmethod
-    def _file_contains(params: dict, output_dir: Path, _ctx: dict) -> tuple[AssertionVerdict, str]:
+    def _file_contains(
+        params: dict, output_dir: Path, _ctx: dict
+    ) -> tuple[AssertionVerdict, str]:
         filename = params.get("filename", "")
         pattern = params.get("pattern", "")
         target = output_dir / filename
@@ -69,7 +74,9 @@ class ProgrammaticChecker:
         return AssertionVerdict.FAIL, f"Pattern '{pattern}' not found in {filename}"
 
     @staticmethod
-    def _contains_pattern(params: dict, output_dir: Path, ctx: dict) -> tuple[AssertionVerdict, str]:
+    def _contains_pattern(
+        params: dict, output_dir: Path, ctx: dict
+    ) -> tuple[AssertionVerdict, str]:
         pattern = params.get("pattern", "")
         # scope:'transcript' = 只查 agent/skill 的文本输出,完全不碰文件。
         # 只读/纯建议 agent 不产文件,带 path 的断言会读输入 fixture 而非 agent 的回答 →
@@ -85,23 +92,37 @@ class ProgrammaticChecker:
         if target.is_file():
             content = target.read_text(encoding="utf-8", errors="replace")
             if re.search(pattern, content):
-                return AssertionVerdict.PASS, f"Pattern '{pattern}' found in {filepath or target}"
-            return AssertionVerdict.FAIL, f"Pattern '{pattern}' not found in {filepath or target}"
+                return (
+                    AssertionVerdict.PASS,
+                    f"Pattern '{pattern}' found in {filepath or target}",
+                )
+            return (
+                AssertionVerdict.FAIL,
+                f"Pattern '{pattern}' not found in {filepath or target}",
+            )
         for f in output_dir.rglob("*"):
             if not (f.is_file()):
                 continue
             try:
                 content = f.read_text(encoding="utf-8", errors="replace")
                 if re.search(pattern, content):
-                    return AssertionVerdict.PASS, f"Pattern '{pattern}' found in {f.name}"
+                    return (
+                        AssertionVerdict.PASS,
+                        f"Pattern '{pattern}' found in {f.name}",
+                    )
             except Exception:
-                logging.getLogger(__name__).debug("Optional operation failed; continuing with fallback", exc_info=True)
+                logging.getLogger(__name__).debug(
+                    "Optional operation failed; continuing with fallback", exc_info=True
+                )
                 continue
         # Fallback: search in transcript (supports advisory/knowledge skills with no file output)
         transcript = ctx.get("transcript", "")
         if transcript and re.search(pattern, transcript):
             return AssertionVerdict.PASS, f"Pattern '{pattern}' found in transcript"
-        return AssertionVerdict.FAIL, f"Pattern '{pattern}' not found in any file or transcript"
+        return (
+            AssertionVerdict.FAIL,
+            f"Pattern '{pattern}' not found in any file or transcript",
+        )
 
     @staticmethod
     def _has_nested_field(data: dict, field: str) -> bool:
@@ -115,20 +136,26 @@ class ProgrammaticChecker:
         return True
 
     @staticmethod
-    def _line_count(params: dict, output_dir: Path, _ctx: dict) -> tuple[AssertionVerdict, str]:
+    def _line_count(
+        params: dict, output_dir: Path, _ctx: dict
+    ) -> tuple[AssertionVerdict, str]:
         min_lines = params.get("min")
         max_lines = params.get("max")
         filepath = params.get("path", "")
         target = output_dir / filepath if filepath else output_dir
 
         if target.is_file():
-            count = len(target.read_text(encoding="utf-8", errors="replace").splitlines())
+            count = len(
+                target.read_text(encoding="utf-8", errors="replace").splitlines()
+            )
         else:
             total = 0
             for f in output_dir.rglob("*"):
                 if not (f.is_file()):
                     continue
-                total += len(f.read_text(encoding="utf-8", errors="replace").splitlines())
+                total += len(
+                    f.read_text(encoding="utf-8", errors="replace").splitlines()
+                )
             count = total
 
         if min_lines is not None and count < min_lines:
@@ -138,20 +165,28 @@ class ProgrammaticChecker:
         return AssertionVerdict.PASS, f"Line count: {count}"
 
     @staticmethod
-    def _not_contains(params: dict, output_dir: Path, ctx: dict) -> tuple[AssertionVerdict, str]:
+    def _not_contains(
+        params: dict, output_dir: Path, ctx: dict
+    ) -> tuple[AssertionVerdict, str]:
         pattern = params.get("pattern", "")
         # scope:'transcript' = 只查 transcript(见 _contains_pattern 同名分支的说明)。
         if params.get("scope") == "transcript":
             transcript = ctx.get("transcript", "")
             if transcript and re.search(pattern, transcript):
-                return AssertionVerdict.FAIL, f"Pattern '{pattern}' found in transcript (should be absent)"
+                return (
+                    AssertionVerdict.FAIL,
+                    f"Pattern '{pattern}' found in transcript (should be absent)",
+                )
             return AssertionVerdict.PASS, f"Pattern '{pattern}' not found in transcript"
         filepath = params.get("path", "")
         target = output_dir / filepath if filepath else output_dir
         if target.is_file():
             content = target.read_text(encoding="utf-8", errors="replace")
             if re.search(pattern, content):
-                return AssertionVerdict.FAIL, f"Pattern '{pattern}' found (should be absent)"
+                return (
+                    AssertionVerdict.FAIL,
+                    f"Pattern '{pattern}' found (should be absent)",
+                )
             return AssertionVerdict.PASS, f"Pattern '{pattern}' not found"
 
         for f in output_dir.rglob("*"):
@@ -160,14 +195,21 @@ class ProgrammaticChecker:
             try:
                 content = f.read_text(encoding="utf-8", errors="replace")
                 if re.search(pattern, content):
-                    return AssertionVerdict.FAIL, f"Pattern '{pattern}' found in {f.name} (should be absent)"
+                    return (
+                        AssertionVerdict.FAIL,
+                        f"Pattern '{pattern}' found in {f.name} (should be absent)",
+                    )
             except Exception:
-                logging.getLogger(__name__).debug("Optional operation failed; continuing with fallback", exc_info=True)
+                logging.getLogger(__name__).debug(
+                    "Optional operation failed; continuing with fallback", exc_info=True
+                )
                 continue
         return AssertionVerdict.PASS, f"Pattern '{pattern}' not found"
 
     @staticmethod
-    def _custom_script(params: dict, output_dir: Path, _ctx: dict) -> tuple[AssertionVerdict, str]:
+    def _custom_script(
+        params: dict, output_dir: Path, _ctx: dict
+    ) -> tuple[AssertionVerdict, str]:
         script = params.get("script", "")
         args = params.get("args", [])
         if not script:
@@ -182,24 +224,37 @@ class ProgrammaticChecker:
             )
             if result.returncode == 0:
                 return AssertionVerdict.PASS, f"Script passed: {result.stdout.strip()}"
-            return AssertionVerdict.FAIL, f"Script failed (exit {result.returncode}): {result.stderr.strip()}"
+            return (
+                AssertionVerdict.FAIL,
+                f"Script failed (exit {result.returncode}): {result.stderr.strip()}",
+            )
         except subprocess.TimeoutExpired:
             return AssertionVerdict.TIMEOUT, "Script timed out"
         except FileNotFoundError:
             return AssertionVerdict.FAIL, f"Script not found: {script}"
 
     @staticmethod
-    def _tool_called(params: dict, _output_dir: Path, ctx: dict) -> tuple[AssertionVerdict, str]:
+    def _tool_called(
+        params: dict, _output_dir: Path, ctx: dict
+    ) -> tuple[AssertionVerdict, str]:
         tool_name = params.get("tool_name", "")
         min_count = params.get("min_count", 1)
         tool_trace = ctx.get("tool_trace", [])
         count = sum(1 for t in tool_trace if getattr(t, "name", "") == tool_name)
         if count >= min_count:
-            return AssertionVerdict.PASS, f"Tool '{tool_name}' called {count} times (min {min_count})"
-        return AssertionVerdict.FAIL, f"Tool '{tool_name}' called {count} times, need >= {min_count}"
+            return (
+                AssertionVerdict.PASS,
+                f"Tool '{tool_name}' called {count} times (min {min_count})",
+            )
+        return (
+            AssertionVerdict.FAIL,
+            f"Tool '{tool_name}' called {count} times, need >= {min_count}",
+        )
 
     @staticmethod
-    def _step_count(params: dict, _output_dir: Path, ctx: dict) -> tuple[AssertionVerdict, str]:
+    def _step_count(
+        params: dict, _output_dir: Path, ctx: dict
+    ) -> tuple[AssertionVerdict, str]:
         num_turns = ctx.get("num_turns", 0)
         min_val = params.get("min")
         max_val = params.get("max")
@@ -223,14 +278,19 @@ class ProgrammaticChecker:
             if not (p.is_file()):
                 continue
             try:
-                contents[filepath] = p.read_text(encoding="utf-8", errors="replace")
+                contents[filepath] = p.read_text(encoding="utf-8-sig", errors="replace")
             except Exception:
-                logging.getLogger(__name__).debug("Optional operation failed; continuing with fallback", exc_info=True)
+                logging.getLogger(__name__).debug(
+                    "Optional operation failed; continuing with fallback", exc_info=True
+                )
                 continue
         return contents
 
     def check(
-        self, eval_case: EvalCase, output_dir: Path, evidence: ExecutionEvidence = ExecutionEvidence()
+        self,
+        eval_case: EvalCase,
+        output_dir: Path,
+        evidence: ExecutionEvidence = ExecutionEvidence(),
     ) -> list[ExpectationResult]:
         transcript = evidence.transcript
         tool_trace = evidence.tool_trace
@@ -246,7 +306,9 @@ class ProgrammaticChecker:
         for assertion in eval_case.assertions:
             if assertion.tier == AssertionTier.TIER3:
                 continue  # Tier 3 assertions (LLM_GRADE, LLM_FACT, LLM_NOT_DELEGATE) are handled by LLM grader
-            verdict, evidence = self._run_assertion(assertion.type, assertion.params, output_dir, context)
+            verdict, evidence = self._run_assertion(
+                assertion.type, assertion.params, output_dir, context
+            )
             exp = ExpectationResult(
                 text=assertion.name,
                 passed=(verdict == AssertionVerdict.PASS),
@@ -279,7 +341,9 @@ class ProgrammaticChecker:
             return AssertionVerdict.ERROR, f"Unknown assertion type: {atype}"
         return handler(params, output_dir, ctx)
 
-    def _json_has_field(self, params: dict, output_dir: Path, _ctx: dict) -> tuple[AssertionVerdict, str]:
+    def _json_has_field(
+        self, params: dict, output_dir: Path, _ctx: dict
+    ) -> tuple[AssertionVerdict, str]:
         filename = params.get("filename", "")
         field = params.get("field", "")
         target = output_dir / filename
@@ -293,7 +357,9 @@ class ProgrammaticChecker:
             return AssertionVerdict.PASS, f"Field '{field}' found in {filename}"
         return AssertionVerdict.FAIL, f"Field '{field}' not found in {filename}"
 
-    def _cross_file_consistency(self, params: dict, output_dir: Path, _ctx: dict) -> tuple[AssertionVerdict, str]:
+    def _cross_file_consistency(
+        self, params: dict, output_dir: Path, _ctx: dict
+    ) -> tuple[AssertionVerdict, str]:
         include = params.get("include")
         files = self._read_all_files(output_dir, include)
         if not files:
@@ -305,22 +371,37 @@ class ProgrammaticChecker:
             return AssertionVerdict.FAIL, f"Unresolved imports: {broken[:5]}"
         return AssertionVerdict.PASS, "All imports resolve"
 
-    def _code_compiles(self, params: dict, output_dir: Path, _ctx: dict) -> tuple[AssertionVerdict, str]:
+    def _code_compiles(
+        self, params: dict, output_dir: Path, _ctx: dict
+    ) -> tuple[AssertionVerdict, str]:
         include = params.get("include")
         files = self._read_all_files(output_dir, include)
         if not files:
             return AssertionVerdict.PASS, "No files to check"
         errors: list[str] = []
         for filepath, content in files.items():
-            _scan_brackets(filepath, content, errors)
+            if Path(filepath).suffix == ".py":
+                try:
+                    ast.parse(content, filename=filepath)
+                except SyntaxError as error:
+                    errors.append(f"{Path(filepath).name}:{error.lineno}: {error.msg}")
+                except ValueError as error:
+                    errors.append(f"{Path(filepath).name}: {error}")
+            else:
+                _scan_brackets(filepath, content, errors)
         if errors:
             return AssertionVerdict.FAIL, f"Syntax issues: {errors[:5]}"
         return AssertionVerdict.PASS, "All files pass basic syntax check"
 
-    def _custom_plugin(self, params: dict, output_dir: Path, _ctx: dict) -> tuple[AssertionVerdict, str]:
+    def _custom_plugin(
+        self, params: dict, output_dir: Path, _ctx: dict
+    ) -> tuple[AssertionVerdict, str]:
         plugin_name = params.get("plugin_name") or params.get("plugin_type", "")
         if not self._plugins:
-            return AssertionVerdict.ERROR, f"No plugin registry, cannot resolve '{plugin_name}'"
+            return (
+                AssertionVerdict.ERROR,
+                f"No plugin registry, cannot resolve '{plugin_name}'",
+            )
         handler = self._plugins.get(plugin_name)
         if handler is None:
             return AssertionVerdict.ERROR, f"Unknown plugin: '{plugin_name}'"

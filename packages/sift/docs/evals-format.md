@@ -79,7 +79,7 @@
 | `TOOL_CALLED` | `tool_name`, `min_count`(默认 1) | 某工具调用次数 ≥ min_count |
 | `STEP_COUNT` | `min` / `max` | agentic 步数(turns)在 [min,max] |
 | `CUSTOM_SCRIPT` | `script`, `args`(可选) | 在工作目录跑脚本,exit 0 过(60s 超时) |
-| `CODE_COMPILES` | `include`(可选 glob) | 括号 `{}``()``[]` 配对的基本语法检查 |
+| `CODE_COMPILES` | `include`(可选 glob) | Python 文件用 `ast.parse` 检查语法（不执行代码）；其他文件使用括号 `{}``()``[]` 配对的基本检查 |
 | `CROSS_FILE_CONSISTENCY` | `include`(可选) | 相对 import(`./x`)都能解析到文件 |
 | `CUSTOM_PLUGIN` | `plugin_name` | 调注册的自定义插件(需 plugin registry) |
 

@@ -1,0 +1,44 @@
+{
+  "framework": "claude-code",
+  "turns": [
+    {
+      "turnIndex": 0,
+      "role": "user",
+      "content": "Prepare the contribution report"
+    },
+    {
+      "turnIndex": 1,
+      "role": "assistant",
+      "content": "Delegate the analysis"
+    },
+    {
+      "turnIndex": 2,
+      "role": "user",
+      "content": "Inspect the changes",
+      "isSubagent": true,
+      "subagentSessionId": "agent-io-fixture-child"
+    },
+    {
+      "turnIndex": 3,
+      "role": "assistant",
+      "content": "Analysis finished",
+      "isSubagent": true,
+      "subagentSessionId": "agent-io-fixture-child"
+    },
+    {
+      "turnIndex": 4,
+      "role": "assistant",
+      "content": "Contribution report complete"
+    }
+  ],
+  "bridge": {
+    "dispatchExecutionId": "agent-io-fixture-parent",
+    "dispatchContent": "Inspect the changes",
+    "responseContent": "Analysis finished",
+    "subagentSessionId": "agent-io-fixture-child",
+    "subagentType": "analysis",
+    "status": "completed",
+    "subagentTokens": 2000,
+    "subagentLatencyMs": 4000
+  }
+}

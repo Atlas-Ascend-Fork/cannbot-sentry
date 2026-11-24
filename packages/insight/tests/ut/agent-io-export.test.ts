@@ -6,64 +6,54 @@
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
-// Copyright (c) 2025-2026 Huawei Technologies Co., Ltd.
-// Integration test for Audit v4 Step 1 — deterministic agent-IO extraction.
-// Runs against the real dev DB; gracefully skips when no bridge has a subagent session.
-
+import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 import { prisma } from "../setup";
 import { buildAgentIO } from "@/lib/export/agent-io-export";
 
+const fixture = JSON.parse(readFileSync(new URL("../data/agent-io-export.json", import.meta.url), "utf8"));
+
 describe("buildAgentIO (v4 Step 1)", () => {
-  it("extracts a flat agent tree with envelope + I/O from a session that has a subagent bridge", { timeout: 60_000 }, async () => {
-    const bridge = await prisma.interactionBridge.findFirst({
-      where: { subagentSessionId: { not: null } },
-      include: { session: { select: { taskId: true, framework: true } } },
+  it("extracts a flat agent tree with envelope + I/O from its own complete bridge fixture", { timeout: 60_000 }, async () => {
+    const session = await prisma.session.create({
+      data: { taskId: `agent-io-export-${randomUUID()}`, framework: fixture.framework },
     });
-    if (!bridge) {
-      // No subagent bridge data in this DB — nothing to assert, pass vacuously.
-      expect(bridge).toBeNull();
-      return;
+    try {
+      await prisma.turn.createMany({
+        data: fixture.turns.map((turn: { turnIndex: number; role: string; content: string; isSubagent?: boolean; subagentSessionId?: string }) => ({ ...turn, sessionId: session.id })),
+      });
+      const turns = await prisma.turn.findMany({ where: { sessionId: session.id }, orderBy: { turnIndex: "asc" } });
+      await prisma.interactionBridge.create({
+        data: { ...fixture.bridge, sessionId: session.id, dispatchTurnId: turns[1].id, responseTurnId: turns[3].id },
+      });
+      const io = await buildAgentIO(session.taskId, prisma, fixture.framework);
+      expect(io.sessionId).toBe(session.id);
+      expect(io.taskQuery).toBe("Prepare the contribution report");
+      expect(io.agents).toHaveLength(2);
+      const main = io.agents.find(a => a.id === "main")!;
+      expect(main.parentId).toBeNull();
+      expect(main.role).toBe("main");
+      expect(main.turns).toEqual([0, 1, 4]);
+      expect(main.outputSummary).toBe("Contribution report complete");
+      const subs = io.agents.filter(a => a.role === "subagent");
+      expect(subs).toHaveLength(1);
+      expect(subs[0]).toMatchObject({
+        id: "agent-io-fixture-child", parentId: "main", role: "subagent",
+        inputSummary: "Inspect the changes", outputSummary: "Analysis finished", turns: [2, 3],
+      });
+      const ids = new Set(io.agents.map(a => a.id));
+      for (const sub of subs) expect(ids.has(sub.parentId!)).toBe(true);
+      for (const agent of io.agents) {
+        for (const key of ["latencySec", "tokensKt", "turnCount", "toolCallCount", "errorCount", "retryCount"] as const) {
+          expect(typeof agent.envelope[key]).toBe("number");
+          expect(agent.envelope[key]).toBeGreaterThanOrEqual(0);
+        }
+        expect(Array.isArray(agent.artifacts)).toBe(true);
+        expect(new Set(agent.turns).size).toBe(agent.turns.length);
+      }
+    } finally {
+      await prisma.session.delete({ where: { id: session.id } });
     }
-
-    const io = await buildAgentIO(bridge.session.taskId, prisma, bridge.session.framework ?? undefined);
-
-    expect(io.sessionId).toBeDefined();
-    expect(Array.isArray(io.agents)).toBe(true);
-    expect(io.agents.length).toBeGreaterThan(0);
-
-    const main = io.agents.find(a => a.id === "main");
-    expect(main).toBeDefined();
-    expect(main!.parentId).toBeNull();
-    expect(main!.role).toBe("main");
-
-    // subagents: parentId points to an existing agent id, role subagent
-    const subs = io.agents.filter(a => a.role === "subagent");
-    const ids = new Set(io.agents.map(a => a.id));
-    for (const s of subs) {
-      expect(s.parentId).not.toBeNull();
-      expect(ids.has(s.parentId!)).toBe(true);
-      expect(s.inputSummary.length).toBeGreaterThanOrEqual(0); // may be empty if dispatchContent absent
-    }
-
-    // envelope fields are numeric and non-negative
-    for (const a of io.agents) {
-      const e = a.envelope;
-      expect(typeof e.latencySec).toBe("number");
-      expect(typeof e.tokensKt).toBe("number");
-      expect(typeof e.turnCount).toBe("number");
-      expect(typeof e.toolCallCount).toBe("number");
-      expect(typeof e.errorCount).toBe("number");
-      expect(typeof e.retryCount).toBe("number");
-      expect(e.turnCount).toBeGreaterThanOrEqual(0);
-      expect(e.errorCount).toBeGreaterThanOrEqual(0);
-      expect(Array.isArray(a.artifacts)).toBe(true);
-      // turns must be unique (no duplicate turnIndex — regression for
-      // "two children with the same key" when an agent's turns array had dups)
-      expect(new Set(a.turns).size).toBe(a.turns.length);
-    }
-
-    // at least one subagent should exist (we picked a session with a bridge)
-    expect(subs.length).toBeGreaterThan(0);
   });
 });
