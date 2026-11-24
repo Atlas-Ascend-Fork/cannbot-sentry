@@ -320,10 +320,10 @@ def test_format_run_header_single_arm():
     """agent 评测(单臂)→ 'agent eval',不含 'A/B' 措辞(无 A/B 对照)。"""
     from sift.cli.pipeline import RunHeader, _format_run_header
 
-    line = _format_run_header(RunHeader(1, "pr-reviewer", 5, "", "", 2))
+    line = _format_run_header(RunHeader(1, "pr-auditor", 5, "", "", 2))
     assert "agent eval" in line
     assert "A/B" not in line
-    assert "pr-reviewer" in line
+    assert "pr-auditor" in line
     assert "5 evals" in line
 
 
@@ -376,3 +376,19 @@ def _invoke_programmatic_eval(fake_run, prefix, evals_path, out):
                 "--no-calibration",
             ],
         )
+
+
+def test_eval_unknown_executor_exits_cleanly(tmp_path: Path):
+    """Invalid --executor must be a usage error, not a Pydantic traceback."""
+    from typer.testing import CliRunner
+
+    from sift.cli.main import app
+
+    skill = _skill(tmp_path, "sk")
+    result = CliRunner().invoke(
+        app,
+        ["eval", str(skill), "--executor", "nope", "--eval-ids", "1"],
+    )
+    assert result.exit_code == 2
+    assert "只支持 cc / dsh" in result.output
+    assert "Traceback" not in result.output

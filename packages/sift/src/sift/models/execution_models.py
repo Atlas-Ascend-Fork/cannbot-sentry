@@ -18,6 +18,7 @@ from pydantic import BaseModel, Field
 
 class RunConfig(BaseModel):
     runs_per_config: int = 3
+    executor: Literal["cc", "dsh"] = "cc"
     model: str | None = None
     timeout_seconds: int = 120
     max_workers: int = 4
