@@ -212,6 +212,33 @@ class TestBuildTextCoverage:
         assert block.instructions[0].status == "covered"
 
     @staticmethod
+    def test_output_format_limits_to_first_three_codeblocks():
+        """OUTPUT_FORMAT 回退只取每节前 3 个 codeblock(与 extractor 采样同规)。
+
+        回归锁:旧实现 _match_section_codeblocks 返回该标题下全部 codeblock,当一节
+        有 4+ 个块时,extractor 只抽前 3 个当输出模板,第 4+ 块却被一并标 covered
+        (过标);修复后第 4 块保持 unmodeled。
+        """
+        body = (
+            "## 输出格式\n\n"
+            "```\n模板A\n```\n"
+            "```\n模板B\n```\n"
+            "```\n模板C\n```\n"
+            "```\n模板D\n```\n"
+        )
+        findings = [
+            _f(
+                "Output should follow template format",
+                AuditVerdict.PASS,
+                FindingOrigin(source="OUTPUT_FORMAT", category=AuditCategory.OUTPUT, section="输出格式"),
+            ),
+        ]
+        cov = build_text_coverage(body, findings)
+        blocks = [u for u in cov.units if u.kind == "codeblock"]
+        assert len(blocks) == 4
+        assert [b.state for b in blocks] == ["covered", "covered", "covered", "unmodeled"]
+
+    @staticmethod
     def test_derived_and_synthetic_excluded():
         findings = [
             _f(

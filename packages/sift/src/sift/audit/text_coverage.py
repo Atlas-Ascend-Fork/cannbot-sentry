@@ -263,14 +263,19 @@ def _match_reference_paths(instruction_text: str, units: list[DeclarationUnit]) 
 
 
 def _match_section_codeblocks(section: str, units: list[DeclarationUnit]) -> list[int]:
-    """OUTPUT_FORMAT 回退:对 section(fence 归属标题)下的全部 codeblock 回指。
+    """OUTPUT_FORMAT 回退:对 section(fence 归属标题)下的 codeblock 回指。
 
-    同节多模板共享一组块(与 extract_output_format 同键),保守合理。
+    同节多模板共享一组块(与 extract_output_format 同键)。extractor 对每个 section
+    只采样前 3 个 codeblock 当输出模板(_append_output_template 的 per_section_count
+    < 3),回指同样只取前 3 个(文档序前 3 个,与 extractor 采样一致)——第 4+ 块
+    extractor 并未抽成 OUTPUT_FORMAT 指令,一并标 covered 会过标;保守对齐只取 3。
     """
     hits = []
     for i, u in enumerate(units):
         if u.kind == "codeblock" and u.heading == section:
             hits.append(i)
+            if len(hits) == 3:
+                break
     return hits
 
 
