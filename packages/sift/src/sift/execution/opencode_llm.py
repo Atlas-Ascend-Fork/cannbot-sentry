@@ -114,7 +114,7 @@ def judge_agent_config() -> dict:
 
 @dataclasses.dataclass
 class _StreamState:
-    """NDJSON 事件流的归集状态(_parse_stream 的可变收集器)。"""
+    """NDJSON 事件流的归集状态(parse_stream 的可变收集器)。"""
 
     parts: dict[str, str] = dataclasses.field(default_factory=dict)
     order: list[str] = dataclasses.field(default_factory=list)
@@ -124,7 +124,7 @@ class _StreamState:
     error: str = ""
 
 
-def _parse_stream(stdout: str) -> tuple[str, dict, float, str, str]:
+def parse_stream(stdout: str) -> tuple[str, dict, float, str, str]:
     """``--format json`` NDJSON 流 → ``(text, tokens, cost, stop_reason, error)``。
 
     - ``text``:按 part id 收末态(同一 part 的事件是增量快照、后者覆盖前者),
@@ -184,7 +184,7 @@ def _apply_text_event(event: dict, state: _StreamState) -> None:
 
 
 def _apply_step_finish_event(event: dict, state: _StreamState) -> None:
-    """tokens 取末个 step(多步求和虚高)、cost 逐步累加(见 _parse_stream docstring)。"""
+    """tokens 取末个 step(多步求和虚高)、cost 逐步累加(见 parse_stream docstring)。"""
     part = event.get("part") or {}
     step_tokens = part.get("tokens")
     if isinstance(step_tokens, dict):
@@ -300,7 +300,7 @@ def _spawn_judge(args: list[str], prompt: str, env: dict, tmp: Path, model: str 
 
 def _completion_from_stream(stdout: str) -> OpencodeCompletion:
     """流解析 + 终态校验(error 事件 / 零文本 → RuntimeError 交调用方重试链处置)。"""
-    text, tokens, cost, stop_reason, error = _parse_stream(stdout)
+    text, tokens, cost, stop_reason, error = parse_stream(stdout)
     if error:
         raise RuntimeError(f"opencode transport 失败(error 事件): {error[:300]}")
     if not text.strip():

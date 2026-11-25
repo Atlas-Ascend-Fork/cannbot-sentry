@@ -375,6 +375,11 @@ def test_judge_step_passes_http_transport(monkeypatch):
 def test_judge_batch_with_retry_forwards_transport_to_call_claude(monkeypatch):
     """judge_batch_with_retry 把 transport 参转发给 call_claude(cc 默认 / http 两向)。"""
     import sift.audit.auditor as A
+    import sift.llm_transport as T
+
+    # resolve 的静态缺位兜底查 claude 是否在 PATH —— 本机没装时 cc 会被转成
+    # opencode,转发断言随环境抖动;假装在场保确定性(兜底本身由 transport 侧测试覆盖)。
+    monkeypatch.setattr(T.shutil, "which", lambda name: f"/fake/bin/{name}")
 
     seen = {}
 
