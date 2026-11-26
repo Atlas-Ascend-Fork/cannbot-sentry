@@ -39,6 +39,18 @@ prisma/test.db
 prisma/test.db-journal
 prisma/test.db-wal
 prisma/test.db-shm
+# 测试库 worker 分片同族（tests/setup.ts 为每个测试进程物化的独立副本；
+# 并行测试期间随连接开合生灭——wal/shm 边车在 npm pack 目录遍历的瞬间
+# 消失会报 ENOENT，热写中被读到会报 tarball corrupted 重试，且副本本体
+# 是测试数据绝不入包）
+test-w*.db
+test-w*.db-journal
+test-w*.db-wal
+test-w*.db-shm
+prisma/test-w*.db
+prisma/test-w*.db-journal
+prisma/test-w*.db-wal
+prisma/test-w*.db-shm
 logs/
 logs
 tmp/
