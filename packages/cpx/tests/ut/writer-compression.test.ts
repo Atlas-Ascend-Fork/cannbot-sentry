@@ -20,17 +20,18 @@ import {
   compressCaptureFile,
   ensureWritableCapture,
   appendClaudeLine,
+  forEachCaptureLine,
 } from '../../src/writer.ts';
 import { ensure7z, decompressToPlain } from '../../src/compression.ts';
 
 const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'cpx-7z-'));
 
-// insight 包源级锁的定位：源码目录名 insight / 产品部署目录名
+// 兄弟 insight 仓源级锁的定位：monorepo 布局名 insight / 独立 checkout 名
 // context-insight 依次探测；两者皆缺返回 null（skipIf 门控见用例处）
 const INSIGHT_COMPRESSION_SRC = (() => {
-  const searchRoot = path.resolve(__dirname, '../../..');
+  const siblingRoot = path.resolve(__dirname, '../../..');
   for (const name of ['insight', 'context-insight']) {
-    const p = path.join(searchRoot, name, 'src', 'lib', 'compression.ts');
+    const p = path.join(siblingRoot, name, 'src', 'lib', 'compression.ts');
     if (fs.existsSync(p)) return p;
   }
   return null;
@@ -183,13 +184,62 @@ describe('writer 7z at rest', () => {
   it.skipIf(INSIGHT_COMPRESSION_SRC == null)('compression parity：双端 .7z 解压点 maxBuffer 对齐 1GiB（源级锁）', () => {
     // 本轮审查抓的正是「readCaptureBuffer 修了 1GiB、同文件 decompressToPlain
     // 漏改」——源级锁双端两个解压点的 maxBuffer 形态（读源码正则抽取），漂移/复发即红。
-    // insight 包两种目录名都探测（源码布局 insight / 部署名
-    // context-insight）；缺席（单独部署 cpx 的环境）skip 不红流水线。
+    // 兄弟 insight 仓两种 checkout 名都探测（monorepo 布局 insight / 独立 clone
+    // 名 context-insight）；缺席（单独跑 cpx 的环境）skip 不红流水线。
     const insightSrc = fs.readFileSync(INSIGHT_COMPRESSION_SRC!, 'utf8');
     const dtStart = insightSrc.indexOf('export function decompressToPlain');
     const dtEnd = insightSrc.indexOf('export function readCaptureBuffer');
     expect(insightSrc.slice(dtStart, dtEnd)).toContain("run7za(['e', '-so', archivePath], 1 << 30)");
     const rbStart = insightSrc.indexOf('export function readCaptureBuffer');
     expect(insightSrc.slice(rbStart)).toContain("run7za(['e', '-so', filePath], 1 << 30)");
+  });
+});
+
+describe('forEachCaptureLine 重放原语', () => {
+  it('Buffer 逐行切片，绝不整文件单字符串物化（大文件必炸回归锁）', () => {
+    const f = path.join(tmpRoot, 'cpx-lines.jsonl');
+    fs.writeFileSync(f, '{"type":"a"}\n{"type":"b"}\n{"type":"c"}\n');
+    const fullSize = fs.statSync(f).size;
+    const seen: unknown[] = [];
+    const toStringLens: number[] = [];
+    const spy = vi.spyOn(Buffer.prototype, 'toString');
+    try {
+      forEachCaptureLine(f, (line) => seen.push(line));
+      for (const inst of spy.mock.instances) toStringLens.push((inst as Buffer).length);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(seen).toEqual([{ type: 'a' }, { type: 'b' }, { type: 'c' }]);
+    // 每行各自 toString（单行长度 << 整文件），无一次整文件 toString——
+    // 旧实现 readCaptureText 整文件 toString 在此 length === fullSize，必红。
+    expect(toStringLens.length).toBeGreaterThan(0);
+    for (const len of toStringLens) expect(len).toBeLessThan(fullSize);
+  });
+
+  it('读/解压失败显式 console.error，不静默吞掉', () => {
+    const bad = path.join(tmpRoot, 'cpx-bad.jsonl.7z');
+    fs.writeFileSync(bad, 'not-a-7z-archive');
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const seen: unknown[] = [];
+      forEachCaptureLine(bad, (line) => seen.push(line));
+      expect(seen).toEqual([]);
+      expect(err).toHaveBeenCalled();
+    } finally {
+      err.mockRestore();
+    }
+  });
+
+  it('文件不存在静默（新会话无历史的合法场景）', () => {
+    const missing = path.join(tmpRoot, 'cpx-none.jsonl');
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const seen: unknown[] = [];
+      forEachCaptureLine(missing, (line) => seen.push(line));
+      expect(seen).toEqual([]);
+      expect(err).not.toHaveBeenCalled();
+    } finally {
+      err.mockRestore();
+    }
   });
 });
