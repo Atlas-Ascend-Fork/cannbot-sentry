@@ -125,6 +125,8 @@ function DialogContent(
   const positioning =
     side === "right"
       ? "inset-y-0 right-0 h-full max-w-full rounded-none rounded-l-xl border-l data-closed:slide-out-to-right data-closed:fade-out-0 data-closed:animate-out data-open:slide-in-from-right data-open:fade-in-0 data-open:animate-in"
+      // 居中形态不设视口上限、不出滚动条：弹窗版面由内容自己负责收敛
+      // （变长的结果内容不进弹窗——见 NoticeHud 需确认卡）
       : "top-1/2 left-1/2 max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 rounded-xl sm:max-w-sm data-closed:zoom-out-95 data-closed:fade-out-0 data-closed:animate-out data-open:zoom-in-95 data-open:fade-in-0 data-open:animate-in"
   // 右上角关闭钮（ghost 图标钮 + 屏幕阅读器文案）
   const closeButton = showCloseButton ? (

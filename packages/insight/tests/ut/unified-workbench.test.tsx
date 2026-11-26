@@ -24,7 +24,7 @@ import os from 'node:os';
 import path from 'node:path';
 import Home from '@/app/page';
 import { AssetList } from '@/components/collection/AssetList';
-import { UploadHudHost, dismissAllUploadHuds } from '@/components/collection/UploadResultHud';
+import { NoticeHudHost, dismissAllNotices } from '@/components/NoticeHud';
 import { parseAndIndex } from '@/lib/run/reader';
 import { saveRun, type RunImportMeta } from '@/lib/run/run-store';
 import { sessionDurationMs } from '@/lib/session-duration';
@@ -94,8 +94,8 @@ afterEach(() => {
   act(() => root?.unmount())
   root = null
   document.body.innerHTML = ''
-  // 上传结果 HUD 模块态清空（宿主随测试树卸载，残留通知不渗入后续用例）
-  act(() => { dismissAllUploadHuds() })
+  // 通知 HUD 模块态清空（宿主随测试树卸载，残留通知不渗入后续用例）
+  act(() => { dismissAllNotices() })
 })
 
 afterAll(() => {
@@ -125,8 +125,8 @@ async function renderHome(sp: Record<string, string | undefined> = {}): Promise<
   const container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
-  // 上传结果 HUD 宿主随树挂载（生产由 app layout 常驻提供，此处对齐）
-  await act(async () => { root!.render(createElement('div', null, tree, createElement(UploadHudHost))) })
+  // 通知 HUD 宿主随树挂载（生产由 app layout 常驻提供，此处对齐）
+  await act(async () => { root!.render(createElement('div', null, tree, createElement(NoticeHudHost))) })
   await settle()
 }
 
@@ -387,6 +387,10 @@ describe('统一工作台 Run 上传流（导入后上传，与会话行同款�
       if (url.includes('/api/settings/lake-config')) {
         return json({ configured: true, address: 'https://example.com/lake.git', branch: 'main' })
       }
+      // 已存凭据与远端匹配：开弹窗的凭据预检通过，不弹配置引导
+      if (url.includes('/api/settings/lake-auth')) {
+        return json({ remotes: [{ url: 'https://example.com/lake.git', username: 'u', tokenMasked: '****' }] })
+      }
       if (url.includes('/api/ingest/lake')) {
         const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>
         // 范式目录下拉数据源（上传表单打开即拉，不计入上传调用断言）
@@ -461,7 +465,7 @@ describe('统一工作台 Run 上传流（导入后上传，与会话行同款�
     expect(document.querySelector('[role="dialog"]')?.textContent ?? '').not.toContain('上传 Run 到')
   })
 
-  it('治理熔断（422）→ 错误展示；缺行成员提示（warnings）', async () => {
+  it('治理熔断（422）→ 报错确认卡（须「知道了」，弹窗原样可重试）；缺行成员 → 清单确认卡', async () => {
     lakeCalls.length = 0
     lakeResponse = { status: 422, value: { error: '上传熔断：清洗后仍检出疑似密钥残留', governance: true } }
     await renderHome({ kind: 'run' })
@@ -471,21 +475,31 @@ describe('统一工作台 Run 上传流（导入后上传，与会话行同款�
     await settle()
     click(submitBtn)
     await settle()
-    expect(document.body.textContent).toContain('上传熔断')
+    // 治理熔断 = 报错：进居中确认卡（不进弹窗、不自动消失）；弹窗留着可重试
+    const melt = document.querySelector('[data-notice-ack][data-notice-tone="error"]')!
+    expect(melt.textContent).toContain('上传熔断：清洗后仍检出疑似密钥残留')
     expect(lakeCalls).toHaveLength(1)
+    expect(document.querySelector('[role="dialog"]')!.textContent).not.toContain('上传熔断')
+    click(document.querySelector('[data-notice-confirm]')!)
+    await settle()
+    // 离场动效（160ms）结束后才真正移除
+    await act(async () => { await new Promise(r => setTimeout(r, 220)) })
+    expect(document.querySelector('[data-notice-ack]')).toBeNull()
+    expect(document.querySelector('[role="dialog"]')).toBeTruthy()
 
-    // 成功但缺行成员：warnings 呈现（包内缺正文，不阻断）
-    lakeResponse = { status: 200, value: { runId: 'minidemo01', unchanged: false, sessionCount: 2, missingSessions: ['S9'], warnings: ['成员会话 S9 不在 insight（导入缺文件或已删除），包内缺该正文'] } }
-    click([...document.querySelectorAll('button')].find(b => b.textContent?.trim() === '关闭')!)
-    await settle()
-    click(document.querySelector('button[aria-label^="上传 run"]')!)
-    await settle()
-    const retryBtn = fillRunUploadForm('李四')
-    await settle()
+    // 成功但缺行成员：完整清单进需确认的警示卡（包内缺正文，不阻断），弹窗关闭
+    lakeResponse = { status: 200, value: { runId: 'minidemo01', unchanged: false, sessionCount: 2, missingSessions: ['S9'], warnings: ['成员会话 S9 不在 insight（导入缺文件或已删除），包内缺其正文'] } }
+    // 重试上下文不丢：表单值原样，不重填直接再传（「任务结果」是可切换选项，
+    // 已选中的表单再点一下等于取消——那不是用户重试的动作）
+    const retryBtn = [...document.querySelectorAll('button')].find(b => b.textContent?.trim() === '确认上传') as HTMLButtonElement
+    expect(retryBtn.disabled).toBe(false)
     click(retryBtn)
     await settle()
-    expect(document.body.textContent).toContain('已上传 2 个成员会话')
-    expect(document.body.textContent).toContain('S9')
+    expect(lakeCalls.at(-1)!.description).toContain('提交人: 张三')
+    const warned = document.querySelector('[data-notice-ack][data-notice-tone="warning"]')!
+    expect(warned.textContent).toContain('已上传 2 个成员会话')
+    expect(warned.querySelector('[data-slot="notice-detail-text"]')!.textContent).toBe('S9')
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
   })
 })
 
