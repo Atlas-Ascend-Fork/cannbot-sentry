@@ -14,7 +14,6 @@
 // 双导入入口（刀2 合一前的过渡态）、行内 bundle 上传流（导入后上传，与会话
 // 同款）、删除 run 的级联确认文案。
 
-import { PRIVATE_DB_PATH } from './unified-workbench-db';
 import { describe, it, expect, afterEach, afterAll, beforeAll, vi } from 'vitest';
 import { createElement } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
@@ -100,10 +99,6 @@ afterEach(() => {
 
 afterAll(() => {
   fs.rmSync(tmpHome, { recursive: true, force: true });
-  // 进程私有库副本清理（含 WAL 同伴文件）
-  for (const suffix of ['', '-wal', '-shm']) {
-    fs.rmSync(`${PRIVATE_DB_PATH}${suffix}`, { force: true });
-  }
   if (ORIG_HOME === undefined) delete process.env.CONTEXT_INSIGHT_HOME;
   else process.env.CONTEXT_INSIGHT_HOME = ORIG_HOME;
 })
@@ -118,10 +113,8 @@ const settle = async (): Promise<void> => {
   await act(async () => { await new Promise(r => setTimeout(r, 20)) })
 }
 
-/** searchParams 直通：断言依赖 run 行/行内按钮时用 kind:'run' 过滤渲染——
- *  并行文件向共享 test.db 落种子时分页可能把 run 行挤到后页，过滤后不依赖页码 */
-async function renderHome(sp: Record<string, string | undefined> = {}): Promise<void> {
-  const tree = await Home({ searchParams: Promise.resolve(sp) })
+async function renderHome(): Promise<void> {
+  const tree = await Home({ searchParams: Promise.resolve({}) })
   const container = document.createElement('div')
   document.body.appendChild(container)
   root = createRoot(container)
@@ -132,7 +125,7 @@ async function renderHome(sp: Record<string, string | undefined> = {}): Promise<
 
 describe('统一工作台：run 行混入单表（store → list-service → page → AssetList）', () => {
   it('已导入 run 渲染为行：Run 徽标 + 详情链接 + 规模副行；指标卡首卡并列 Run 计数', async () => {
-    await renderHome({ kind: 'run' })
+    await renderHome()
 
     expect(document.body.textContent).toContain('mini-bundle')
     expect(document.body.textContent).not.toContain('暂无导入的 Run')
@@ -259,72 +252,47 @@ describe('统一工作台：run 行混入单表（store → list-service → pag
 
   it('指标卡系统总消耗口径：Σtokens/Σcost/平均时长/Errors = 独立会话 + run 成员（页面层）', async () => {
     // 期望 = Σ全库会话行：本文件的 run 恰好拥有自己种的 3 个成员（join 全命中
-    // + ownedSessions 隔离），Σ独立 + Σrun成员 = Σ全行；他人会话（私有库装配
-    // 时冻结的并行文件行）是独立会话，等式两侧同计。本文件已由
-    // unified-workbench-db 装配为进程私有库（共享库的在线备份快照），并行文
-    // 件的落种子/原行更新在源头根除；下方保留「内容一致」括号（快照→渲染→
-    // 再快照对齐才比）与断言级重试作为防线（私有库内无并发写者，首轮即稳）
-    // ——真缺陷与时序无关，重试只会轮轮红，不会误绿
+    // + ownedSessions 隔离），Σ独立 + Σrun成员 = Σ全行；其他并行文件的会话从
+    // 本 home 看是独立会话，等式两侧同计。共享 test.db 下并行文件可能在快照与
+    // 页面取数之间落种子——行数变化则重渲染重比（收敛后容差只需吸收格式舍入
+    // 与罕见的原行更新）
     const readRows = () => prisma.session.findMany({
       select: { totalTokens: true, totalCost: true, startTime: true, endTime: true, totalLatencyMs: true },
     });
-    type SnapshotRows = Awaited<ReturnType<typeof readRows>>;
-    const rowsKey = (rs: SnapshotRows): string =>
-      JSON.stringify(rs.map(r => [Number(r.totalTokens), r.totalCost, Number(r.startTime), Number(r.endTime), Number(r.totalLatencyMs)]).sort());
-    const unmountTree = (): void => {
+    let rows = await readRows();
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await renderHome();
+      if ((await prisma.session.count()) === rows.length) break;
       act(() => root?.unmount());
       document.body.innerHTML = '';
-    };
-    const assertAgainstSnapshot = (rows: SnapshotRows): void => {
-      const expTokens = rows.reduce((s, r) => s + Number(r.totalTokens), 0);
-      const expCost = rows.reduce((s, r) => s + r.totalCost, 0);
-      const expTotalMs = rows.reduce((s, r) => s + sessionDurationMs(r.startTime, r.endTime, Number(r.totalLatencyMs)), 0);
-
-      const values = [...document.querySelectorAll('p.text-2xl')].map(el => el.textContent ?? '');
-      expect(values.length).toBe(5); // Assets / Tokens / Cost / Total Duration / Errors
-      const parseNum = (text: string): number => {
-        const m = text.match(/([\d.]+)\s*([KM]?)/);
-        return m ? parseFloat(m[1]!) * (m[2] === 'K' ? 1e3 : m[2] === 'M' ? 1e6 : 1) : NaN;
-      };
-      const parseDur = (text: string): number => {
-        const m = text.match(/([\d.]+)\s*(ms|min|h|s)/);
-        if (!m) return NaN;
-        return parseFloat(m[1]!) * (m[2] === 'h' ? 3_600_000 : m[2] === 'min' ? 60_000 : m[2] === 's' ? 1_000 : 1);
-      };
-      // Tokens / Cost：Σ全库（成员 Σ 主导期望值；双计会让 tokens 翻倍，1% 容差必炸）
-      expect(Math.abs(parseNum(values[1]!) - expTokens)).toBeLessThanOrEqual(expTokens * 0.01);
-      expect(Math.abs(parseFloat(values[2]!.replace('$', '')) - expCost)).toBeLessThanOrEqual(Math.max(0.05, expCost * 0.01));
-      // Total Duration：Σ全库时长（独立 + run 成员；漏并成员会少 ~10min，2% 容差必炸）
-      expect(Math.abs(parseDur(values[3]!) - expTotalMs)).toBeLessThanOrEqual(Math.max(5_000, expTotalMs * 0.02));
-      // Assets 首卡 = 独立会话数 + run 行数（隔离闸：成员不双计；±2 吸收残余
-      // 竞态，双计会 +3 必超）；run 成员会话数不再出现在首页计数口径
-      expect(Math.abs(parseInt(values[0]!, 10) - (rows.length - 3 + 1))).toBeLessThanOrEqual(2);
-      expect(document.body.textContent).not.toContain('member sessions');
-      // Errors：run 行在首页，其成员的失败工具调用计入页级 Errors
-      expect(parseInt(values[4]!, 10)).toBeGreaterThanOrEqual(1);
-    };
-    let lastErr: unknown;
-    for (let attempt = 0; attempt < 4; attempt++) {
-      let rows = await readRows();
-      for (let r = 0; r < 3; r++) {
-        await renderHome({ kind: 'run' });
-        const after = await readRows();
-        if (rowsKey(after) === rowsKey(rows)) break; // 内容稳定括号成立
-        rows = after;
-        // 内容仍在漂（并行文件持续落种子/原行更新）：卸载重渲染重比；末轮保留
-        // 现渲染——重试循环绝不能以空 DOM 收场（残余漂移由断言重试兜底）
-        if (r < 2) unmountTree();
-      }
-      try {
-        assertAgainstSnapshot(rows);
-        return; // 稳定括号下断言通过
-      } catch (e) {
-        // 括号稳但仍红：页面取数撞见瞬态行（插入又回收的窄窗），整轮重来
-        lastErr = e;
-        unmountTree();
-      }
+      rows = await readRows();
     }
-    throw lastErr; // 连续四轮红：真缺陷（重试不掩盖）
+    const expTokens = rows.reduce((s, r) => s + Number(r.totalTokens), 0);
+    const expCost = rows.reduce((s, r) => s + r.totalCost, 0);
+    const expTotalMs = rows.reduce((s, r) => s + sessionDurationMs(r.startTime, r.endTime, Number(r.totalLatencyMs)), 0);
+
+    const values = [...document.querySelectorAll('p.text-2xl')].map(el => el.textContent ?? '');
+    expect(values.length).toBe(5); // Assets / Tokens / Cost / Total Duration / Errors
+    const parseNum = (text: string): number => {
+      const m = text.match(/([\d.]+)\s*([KM]?)/);
+      return m ? parseFloat(m[1]!) * (m[2] === 'K' ? 1e3 : m[2] === 'M' ? 1e6 : 1) : NaN;
+    };
+    const parseDur = (text: string): number => {
+      const m = text.match(/([\d.]+)\s*(ms|min|h|s)/);
+      if (!m) return NaN;
+      return parseFloat(m[1]!) * (m[2] === 'h' ? 3_600_000 : m[2] === 'min' ? 60_000 : m[2] === 's' ? 1_000 : 1);
+    };
+    // Tokens / Cost：Σ全库（成员 Σ 主导期望值；双计会让 tokens 翻倍，1% 容差必炸）
+    expect(Math.abs(parseNum(values[1]!) - expTokens)).toBeLessThanOrEqual(expTokens * 0.01);
+    expect(Math.abs(parseFloat(values[2]!.replace('$', '')) - expCost)).toBeLessThanOrEqual(Math.max(0.05, expCost * 0.01));
+    // Total Duration：Σ全库时长（独立 + run 成员；漏并成员会少 ~10min，2% 容差必炸）
+    expect(Math.abs(parseDur(values[3]!) - expTotalMs)).toBeLessThanOrEqual(Math.max(5_000, expTotalMs * 0.02));
+    // Assets 首卡 = 独立会话数 + run 行数（隔离闸：成员不双计；±2 吸收残余
+    // 竞态，双计会 +3 必超）；run 成员会话数不再出现在首页计数口径
+    expect(Math.abs(parseInt(values[0]!, 10) - (rows.length - 3 + 1))).toBeLessThanOrEqual(2);
+    expect(document.body.textContent).not.toContain('member sessions');
+    // Errors：run 行在首页，其成员的失败工具调用计入页级 Errors
+    expect(parseInt(values[4]!, 10)).toBeGreaterThanOrEqual(1);
   })
 
   it('header 单一导入入口（统一向导，刀2 合一）+ 设置入口保留', async () => {
@@ -435,7 +403,7 @@ describe('统一工作台 Run 上传流（导入后上传，与会话行同款�
   it('行内上传按钮 → 会话同款表单（范式/提交人/任务结果必选）→ POST bundle-upload（范式=物理落点）→ 成功提示', async () => {
     lakeCalls.length = 0
     lakeResponse = { status: 200, value: { runId: 'minidemo01', unchanged: false, sessionCount: 3, missingSessions: [], warnings: [] } }
-    await renderHome({ kind: 'run' })
+    await renderHome()
 
     const uploadBtn = document.querySelector('button[aria-label^="上传 run"]') as HTMLButtonElement
     expect(uploadBtn).not.toBeNull()
@@ -468,7 +436,7 @@ describe('统一工作台 Run 上传流（导入后上传，与会话行同款�
   it('治理熔断（422）→ 报错确认卡（须「知道了」，弹窗原样可重试）；缺行成员 → 清单确认卡', async () => {
     lakeCalls.length = 0
     lakeResponse = { status: 422, value: { error: '上传熔断：清洗后仍检出疑似密钥残留', governance: true } }
-    await renderHome({ kind: 'run' })
+    await renderHome()
     click(document.querySelector('button[aria-label^="上传 run"]')!)
     await settle()
     const submitBtn = fillRunUploadForm('张三')
@@ -524,7 +492,7 @@ describe('统一工作台 Run 删除流（级联确认）', () => {
 
   it('删除按钮 → 级联语义确认弹窗（含成员会话级联提示）→ DELETE /api/observe/run/<runId>', async () => {
     deleteUrls.length = 0
-    await renderHome({ kind: 'run' })
+    await renderHome()
 
     click(document.querySelector('button[title="Delete run"]')!)
     await settle()
