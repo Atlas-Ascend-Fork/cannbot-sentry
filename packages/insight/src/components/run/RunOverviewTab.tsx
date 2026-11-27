@@ -6,6 +6,15 @@
 // THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
+
+// 面板复用 OverviewPanels（单元总览单一源：总览头[身份+Σ大瓦片]/Skills/
+// Tool Calls/Error Turns，与离线导出 viewer 同源）；时间维度（Agent 泳道）
+// 归 Perf 页执行时间线，Overview 不再承载；bundle 专属的结构卡（代际/回滚/
+// 子图）+ 导入信息按 run-graph 存在性附加（solo run 无图结构，视图与
+// session 页对齐）。
+// Σ指标：memberStats（服务端聚合）+ executions Σ（llm/tool/skill/subagent）
+// + totalErrors（页级）；llmActiveMs 客户端按 assistant 轮在途窗口并集
+// （computeLlmActiveMs，与 session 详情同口径）。
 import { useEffect, useMemo, useState } from "react";
 import {
   OverviewPanels,

@@ -7,6 +7,17 @@
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
+// 端点取数，solo = 单成员退化）与离线导出（run 工作台自身即查看器，离线
+// 内核按档案应答同一 run 端点）同源消费，展示零复制。
+// 总览头 = 身份 + Σ指标一体：标题位（run 详情 = identity.run 下放身份
+// [短标题/状态/类型/runId]；session/导出查看器 = 框架名大标题）、元信息行
+// （框架[run 形态降入]/模型/成员/时间窗/代码统计/来源）、指标瓦片网格、
+// Wall Clock 活动圆环、Errors 可点击深链首个错误轮。
+// 纯展示契约：数据全走 props（identity/metrics 为聚合形状——run 级 = Σ成员，
+// 会话级 = 单成员值）；轮次跳转经 onOpenTurns 回调（member 归因随行——run
+// 工作台深链定位成员，session 视图无此维度时忽略即可）。时间维度（Agent
+// 泳道）不在此面——性能观测归 Perf 页执行时间线。
+
 import { useMemo, useState, useCallback } from "react"
 import type { ReactNode } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -16,7 +27,7 @@ import { CopyButton } from "@/components/observe/CopyButton"
 import type { AgentItem, BridgeItem } from "@/components/observe/AgentCallGraph"
 import { frameworkDisplayName, isProxyVersion } from "@/lib/shared/session-format"
 import { buildSubagentNumbers } from "@/lib/subagent-numbering"
-import { summarizeToolCallErrors, toolCallErrorMessage, type TurnErrorDigest } from "@/lib/tool-call-errors"
+import { buildTurnErrorDigest, type TurnErrorDigest } from "@/lib/tool-call-errors"
 import { dispatchOnlySkillNames } from "@/lib/sift-audit"
 
 export type OverviewAgent = AgentItem
@@ -96,19 +107,15 @@ export interface OverviewTurn {
   errorDigest?: TurnErrorDigest
 }
 
-/** 轮级错误信息统一取用（单一渲染路径，双数据源）：优先服务端 digest，
- *  缺省从原文（离线导出载荷）就地计算——计数/明细/消息提取共享同一实现 */
-function errorInfoOf(t: OverviewTurn): { summary: ReturnType<typeof summarizeToolCallErrors>; messages: Array<{ toolName: string; message: string }>; skillMessages: Array<{ skillName: string; message: string }> } {
-  if (t.errorDigest) return { summary: t.errorDigest, messages: t.errorDigest.messages, skillMessages: t.errorDigest.skillMessages }
-  return {
-    summary: summarizeToolCallErrors(t.toolCalls, t.skillEvents, t.finishReason),
-    messages: t.toolCalls
-      .map(tc => ({ toolName: tc.toolName, message: toolCallErrorMessage(tc) }))
-      .filter(m => m.message !== ""),
-    skillMessages: t.skillEvents
-      .filter(se => !se.success && se.errorMessage)
-      .map(se => ({ skillName: se.skillName, message: se.errorMessage!.substring(0, 60) })),
-  }
+const EMPTY_DIGEST: TurnErrorDigest = {
+  total: 0, cancelled: 0, failed: 0, skillFail: 0, modelOutputTruncated: 0,
+  details: [], messages: [], skillMessages: [],
+}
+
+/** 轮级摘要统一取用（单一渲染路径，双数据源）：优先服务端 digest，缺省从原文
+ *  （离线导出载荷）经共享 buildTurnErrorDigest 就地计算；无任何信号 → 空摘要 */
+function digestOf(t: OverviewTurn): TurnErrorDigest {
+  return t.errorDigest ?? buildTurnErrorDigest(t.toolCalls, t.skillEvents, t.finishReason) ?? EMPTY_DIGEST
 }
 
 export interface OverviewOpenTurnsTarget {
@@ -332,6 +339,8 @@ function ListSkeleton({ rows = 3 }: { rows?: number }) {
 
 export function OverviewPanels({ identity, metrics, turns, skills, pending = false, onOpenTurns, onOpenSkills }: OverviewPanelsProps) {
   const [showAllErrorTurns, setShowAllErrorTurns] = useState(false)
+  // 轮级摘要按轮计算一次：错误卡 / Errors 瓦片两处共用，重渲染不重算
+  const digestByTurnId = useMemo(() => new Map(turns.map(t => [t.turnId, digestOf(t)])), [turns])
   const subagentNumbers = useMemo(() => buildSubagentNumbers(turns), [turns])
   const withSubagentNum = useCallback((base: string, sid: string | null): string => {
     const num = sid ? subagentNumbers.get(sid) : undefined
@@ -499,11 +508,9 @@ export function OverviewPanels({ identity, metrics, turns, skills, pending = fal
                 value={String(metrics.errorCount)}
                 tone="error"
                 onClick={() => {
-                  const first = turns
-                    .map(t => ({ turn: t, errors: errorInfoOf(t).summary }))
-                    .find(({ errors }) => errors.total > 0)
+                  const first = turns.find(t => (digestByTurnId.get(t.turnId)?.total ?? 0) > 0)
                   if (first) {
-                    onOpenTurns({ turnId: first.turn.turnId, member: first.turn.member?.taskId ?? null })
+                    onOpenTurns({ turnId: first.turnId, member: first.member?.taskId ?? null })
                   }
                 }}
               />
@@ -582,8 +589,8 @@ export function OverviewPanels({ identity, metrics, turns, skills, pending = fal
       {(() => {
         if (pending) return null
         const errorTurns = turns
-          .map(t => ({ turn: t, info: errorInfoOf(t) }))
-          .filter(({ info }) => info.summary.total > 0)
+          .map(t => ({ turn: t, digest: digestByTurnId.get(t.turnId) ?? EMPTY_DIGEST }))
+          .filter(({ digest }) => digest.total > 0)
 
         if (errorTurns.length === 0) return <div />
 
@@ -596,9 +603,7 @@ export function OverviewPanels({ identity, metrics, turns, skills, pending = fal
             </CardHeader>
             <CardContent>
               <div className="divide-y divide-red-500/[0.08] overflow-hidden rounded-xl bg-red-500/[0.04] dark:bg-red-500/[0.06]">
-                {visibleErrorTurns.map(({ turn: t, info }) => {
-                  const errors = info.summary
-                  return (
+                {visibleErrorTurns.map(({ turn: t, digest }) => (
                   <button
                     key={t.turnId}
                     className="w-full px-3 py-2 text-left text-xs transition-colors hover:bg-red-500/[0.07] cursor-pointer"
@@ -611,31 +616,30 @@ export function OverviewPanels({ identity, metrics, turns, skills, pending = fal
                       {multiMember && t.member && <Badge variant="slate" className="text-xs">{t.member.label ?? t.member.taskId.slice(0, 12)}</Badge>}
                       <Badge variant="outline" className="text-xs">{t.role}</Badge>
                       {t.isSubagent && t.subagentName && <Badge variant="orange" className="text-xs">🔗 {withSubagentNum(t.subagentName, t.subagentSessionId)}</Badge>}
-                      {errors.cancelled > 0 && <Badge variant="orange" className="text-xs">{errors.cancelled} cancelled</Badge>}
-                      {errors.failed > 0 && <Badge variant="red" className="text-xs">{errors.failed} failed</Badge>}
-                      {errors.skillFail > 0 && <Badge variant="red" className="text-xs">{errors.skillFail} skill_fail</Badge>}
-                      {errors.truncated > 0 && <Badge variant="red" className="text-xs">⛔ max_tokens 截断</Badge>}
+                      {digest.cancelled > 0 && <Badge variant="orange" className="text-xs">{digest.cancelled} cancelled</Badge>}
+                      {digest.failed > 0 && <Badge variant="red" className="text-xs">{digest.failed} failed</Badge>}
+                      {digest.skillFail > 0 && <Badge variant="red" className="text-xs">{digest.skillFail} skill_fail</Badge>}
+                      {digest.modelOutputTruncated > 0 && <Badge variant="red" className="text-xs">⛔ max_tokens 截断</Badge>}
                       {t.model && <span className="text-muted-foreground ml-auto">{t.model}</span>}
                     </div>
                     {t.contentSummary && (
                       <p className="text-foreground/80 truncate mb-0.5">{t.contentSummary.substring(0, 80)}</p>
                     )}
                     <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-muted-foreground">
-                      {errors.details.map((d, i) => (
+                      {digest.details.map((d, i) => (
                         <span key={i} className={d.type === "cancelled" ? "text-orange-500" : "text-red-500 dark:text-red-400"}>
-                          {d.type === "skill_fail" ? "⚡" : d.type === "truncated" ? "⛔" : "🔧"} {d.toolName}
+                          {d.type === "skill_fail" ? "⚡" : d.type === "model_truncated" ? "⛔" : "🔧"} {d.toolName}
                         </span>
                       ))}
-                      {info.messages.map(m => (
+                      {digest.messages.map(m => (
                         <span key={`${m.toolName}-${m.message}`} className="text-red-500/80 dark:text-red-400/80 truncate max-w-[180px]">{m.toolName}: {m.message}</span>
                       ))}
-                      {info.skillMessages.map(m => (
+                      {digest.skillMessages.map(m => (
                         <span key={`${m.skillName}-${m.message}`} className="text-red-500/80 dark:text-red-400/80 truncate max-w-[180px]">⚡ {m.skillName}: {m.message}</span>
                       ))}
                     </div>
                   </button>
-                  )
-                })}
+                ))}
               </div>
               {errorTurns.length > 3 && (
                 <button
