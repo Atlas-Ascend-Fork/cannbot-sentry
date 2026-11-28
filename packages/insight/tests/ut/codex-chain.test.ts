@@ -6,6 +6,17 @@
 // INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
 // See LICENSE in the root of the software repository for the full text of the License.
 
+//        检测只认 Read → Skills 面板恒空，真机实测模型真实调用技能但 0 事件）
+//     2. tool_use 行 ts < tool_result 行 ts → 工具时长非 0（此前
+//        completedAt 含 dump I/O 尾段开销，与下一轮 receivedAt 倒挂 →
+//        durationMs 被 clamp 成 0，真机实测 31ms 倒挂）
+//     3. cc-wire-round.reasoningTokens 信封 → Turn reasoningTokens（此前
+//        信封缺字段 → deepseek 系思考模型 reasoning 恒 0，真机实测 197 → 0）
+//     4. usage.reasoning_tokens 读侧兜底（旧版捕获件没有信封字段）
+//   原生路径（rollout → codex-jsonl adapter）：
+//     5. function_call 行 ts → startedAt、function_call_output 行 ts →
+//        completedAt（此前两字段恒缺 → 工具时长恒 0）
+//     6. 同一技能检测通道在原生路径生效
 import { describe, it, expect, beforeAll } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
